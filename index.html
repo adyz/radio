@@ -45,35 +45,36 @@
     const errorMsg = document.getElementById('errorMsg');
     const prevBtn = document.getElementById('prevBtn');
     const nextBtn = document.getElementById('nextBtn');
-
     const noiseURL = "./noise.mp3";
+    let hasError = false;
+
 
     const updateMediaSession = () => {
+      console.log('Update Media', {index:radioSelect.selectedIndex, text: radioSelect.options[radioSelect.selectedIndex].text})
       if ('mediaSession' in navigator) {
         navigator.mediaSession.metadata = new MediaMetadata({
-          title: radioSelect.options[radioSelect.selectedIndex].text,
+          title: hasError ? 'Eroare' : radioSelect.options[radioSelect.selectedIndex].text,
           artist: 'Radio Online',
-          artwork: [{ src: 'https://placehold.co/512x512?text=Radiouri', sizes: '512x512', type: 'image/png' }]
+          artwork: [{ src: `https://placehold.co/512x512?text=${radioSelect.options[radioSelect.selectedIndex].text}`, sizes: '512x512', type: 'image/png' }]
         });
-        
-        navigator.mediaSession.setActionHandler('previoustrack', () => playRadio(radioSelect.selectedIndex > 1 ? radioSelect.selectedIndex - 1 : radioSelect.options.length - 1));
-        navigator.mediaSession.setActionHandler('nexttrack', () => playRadio(radioSelect.selectedIndex < radioSelect.options.length - 1 ? radioSelect.selectedIndex + 1 : 1));
       }
     };
 
     const playRadio = (index) => {
+      console.log('playRadio');
       radioSelect.selectedIndex = index;
       player.src = radioSelect.value;
       player.play();
       errorMsg.classList.add('hidden');
-      updateMediaSession()
+      updateMediaSession();
     };
 
     radioSelect.addEventListener('change', (e) => {
+      console.log('Change', {e, value: e.target.value, index: radioSelect.selectedIndex})
       if (e.target.value) {
-        player.src = e.target.value;
-        player.play();
+        playRadio(radioSelect.selectedIndex)
         errorMsg.classList.add('hidden');
+        hasError = false;
       } else {
         player.pause();
         player.src = '';
@@ -81,17 +82,22 @@
     });
 
     player.addEventListener('error', () => {
+      console.log('Error');
       errorMsg.classList.remove('hidden');
+      hasError = true
       player.src = noiseURL;
       player.play();
+      updateMediaSession();
     });
 
     const prevRadio = () => {
+      console.log('prevRadio')
       const prevIndex = radioSelect.selectedIndex > 1 ? radioSelect.selectedIndex - 1 : radioSelect.options.length - 1;
       playRadio(prevIndex);
     };
 
     const nextRadio = () => {
+      console.log('prevRadio')
       const nextIndex = radioSelect.selectedIndex < radioSelect.options.length - 1 ? radioSelect.selectedIndex + 1 : 1;
       playRadio(nextIndex);
     };
@@ -99,8 +105,14 @@
     prevBtn.addEventListener('click', prevRadio);
     nextBtn.addEventListener('click', nextRadio);
 
-    navigator.mediaSession.setActionHandler('previoustrack', prevRadio);
-    navigator.mediaSession.setActionHandler('nexttrack', nextRadio);
+    updateMediaSession();
+
+    player.addEventListener('playing', () => {
+      console.log('Playing');
+      navigator.mediaSession.setActionHandler('previoustrack', prevRadio);
+      navigator.mediaSession.setActionHandler('nexttrack', nextRadio);
+    });
+
   </script>
 </body>
 </html>
