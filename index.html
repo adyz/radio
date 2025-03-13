@@ -48,11 +48,25 @@
 
     const noiseURL = "./noise.mp3";
 
+    const updateMediaSession = () => {
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({
+          title: radioSelect.options[radioSelect.selectedIndex].text,
+          artist: 'Radio Online',
+          artwork: [{ src: 'https://placehold.co/512x512?text=Radiouri', sizes: '512x512', type: 'image/png' }]
+        });
+        
+        navigator.mediaSession.setActionHandler('previoustrack', () => playRadio(radioSelect.selectedIndex > 1 ? radioSelect.selectedIndex - 1 : radioSelect.options.length - 1));
+        navigator.mediaSession.setActionHandler('nexttrack', () => playRadio(radioSelect.selectedIndex < radioSelect.options.length - 1 ? radioSelect.selectedIndex + 1 : 1));
+      }
+    };
+
     const playRadio = (index) => {
       radioSelect.selectedIndex = index;
       player.src = radioSelect.value;
       player.play();
       errorMsg.classList.add('hidden');
+      updateMediaSession()
     };
 
     radioSelect.addEventListener('change', (e) => {
