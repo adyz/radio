@@ -59,9 +59,10 @@
 
     const updateMediaSession = () => {
       if ('mediaSession' in navigator) {
+        const title = radioSelect.options[radioSelect.selectedIndex].text;
         navigator.mediaSession.metadata = new MediaMetadata({
-          title: isLoading ? 'Se încarcă...' : hasError ? 'Eroare: Nu se poate reda' : radioSelect.options[radioSelect.selectedIndex].text,
-          artist: 'Radio Online',
+          title: isLoading ? `Se încarcă...${title}` : hasError ? `Eroare la încărcarea ${title}` : title,
+          artist: `Coji Radio Player | ${title}`,
           artwork: [{ src: `https://placehold.co/512x512?text=${isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : radioSelect.options[radioSelect.selectedIndex].text}` }]
         });
         navigator.mediaSession.setActionHandler('previoustrack', prevRadio);
