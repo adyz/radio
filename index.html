@@ -31,15 +31,18 @@
     <audio id="player" controls class="w-full">
       Browser-ul tău nu suportă tag-ul audio.
     </audio>
+
     <audio id="loadingNoise" loop>
       <source src="./noise2.mp3" type="audio/mpeg">
+    </audio>
+
+    <audio id="errorNoise" loop>
+      <source src="./noise.mp3" type="audio/mpeg">
     </audio>
 
     <div id="loadingMsg" class="text-blue-500 text-center mt-4 hidden">Se încarcă...</div>
     <div id="errorMsg" class="text-red-500 text-center mt-4 hidden">
       <p>Eroare la încărcarea postului radio.</p>
-      <button id="prevBtn" class="bg-gray-300 px-3 py-1 rounded mr-2">Anterior</button>
-      <button id="nextBtn" class="bg-gray-300 px-3 py-1 rounded">Următor</button>
     </div>
   </div>
 
@@ -47,11 +50,10 @@
     const radioSelect = document.getElementById('radioSelect');
     const player = document.getElementById('player');
     const loadingNoise = document.getElementById('loadingNoise');
+    const errorNoise = document.getElementById('errorNoise');
     const loadingMsg = document.getElementById('loadingMsg');
     const errorMsg = document.getElementById('errorMsg');
-    const prevBtn = document.getElementById('prevBtn');
-    const nextBtn = document.getElementById('nextBtn');
-    const noiseURL = "./noise.mp3";
+
     let hasError = false;
     let isLoading = false;
 
@@ -76,6 +78,8 @@
       isLoading = true;
       updateMediaSession();
       loadingMsg.classList.remove('hidden');
+      errorMsg.classList.add('hidden');
+      errorNoise.pause();
       loadingNoise.play();
       player.play().then(() => {
         isLoading = false;
@@ -88,10 +92,9 @@
         isLoading = false;
         loadingMsg.classList.add('hidden');
         errorMsg.classList.remove('hidden');
-        hasError = true;
+        
         loadingNoise.pause();
-        player.src = noiseURL;
-        player.play();
+        errorNoise.play();
         updateMediaSession();
       });
     };
@@ -114,9 +117,6 @@
       console.log('nextRadio');
       playRadio(radioSelect.selectedIndex < radioSelect.options.length - 1 ? radioSelect.selectedIndex + 1 : 1);
     };
-
-    prevBtn.addEventListener('click', prevRadio);
-    nextBtn.addEventListener('click', nextRadio);
   </script>
 </body>
 </html>
