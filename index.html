@@ -33,11 +33,11 @@
     </audio>
 
     <audio id="loadingNoise" loop>
-      <source src="./noise2.mp3" type="audio/mpeg">
+      <source src="./loading.mp3" type="audio/mpeg">
     </audio>
 
     <audio id="errorNoise" loop>
-      <source src="./noise.mp3" type="audio/mpeg">
+      <source src="./error.mp3" type="audio/mpeg">
     </audio>
 
     <div id="loadingMsg" class="text-blue-500 text-center mt-4 hidden">Se încarcă...</div>
@@ -71,30 +71,77 @@
       }
     };
 
+    function audioInstance(htmlElement) {
+      let initialSrc = htmlElement.querySelector('source').src;
+      let isPlaying = false;
+
+      const instance = {};
+      instance.src = initialSrc;
+
+      instance.play = () => {
+        if (!isPlaying) {
+          console.log('Play audio', {htmlSrc: htmlElement.src, instanceSrc: instance.src});
+          htmlElement.src = instance.src;
+          isPlaying = true;
+          htmlElement.play().catch((error) => {
+            if (error.name !== 'AbortError') {
+              console.error('Error playing audio:', error);
+            }
+            isPlaying = false;
+          });
+        }
+      };
+
+      instance.stop = () => {
+        if (isPlaying) {
+          console.log('Stop audio', {htmlSrc: htmlElement.src, instanceSrc: instance.src});
+          htmlElement.pause();
+          htmlElement.src = '';
+          isPlaying = false;
+        }
+      };
+
+      return instance;
+    }
+
+
+    const loadingNoiseInstance = audioInstance(loadingNoise);
+    const errorNoiseInstance = audioInstance(errorNoise);
+
     const playRadio = (index) => {
       console.log('playRadio');
       radioSelect.selectedIndex = index;
       player.src = radioSelect.value;
       isLoading = true;
+      hasError = false;
+      
       updateMediaSession();
+
       loadingMsg.classList.remove('hidden');
       errorMsg.classList.add('hidden');
-      errorNoise.pause();
-      loadingNoise.play();
+      
+      loadingNoiseInstance.play();
+      errorNoiseInstance.stop();
+
       player.play().then(() => {
         isLoading = false;
+        hasError = false;
         loadingMsg.classList.add('hidden');
         errorMsg.classList.add('hidden');
-        hasError = false;
-        loadingNoise.pause();
+        
+        loadingNoiseInstance.stop();
+
         updateMediaSession();
       }).catch(() => {
+        
         isLoading = false;
+        hasError = true;
+
         loadingMsg.classList.add('hidden');
         errorMsg.classList.remove('hidden');
         
-        loadingNoise.pause();
-        errorNoise.play();
+        loadingNoiseInstance.stop();
+        errorNoiseInstance.play();
         updateMediaSession();
       });
     };
