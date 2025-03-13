@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Radio Player RO</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+  <div class="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md">
+    <h1 class="text-2xl font-bold text-center mb-4">Radio Player RO</h1>
+
+    <select id="radioSelect" class="w-full p-3 border rounded-lg mb-4">
+      <option value="">Alege un post radio</option>
+      <option value="https://live.kissfm.ro/kissfm.aacp">Kiss FM</option>
+      <option value="https://astreaming.europafm.ro:8443/europafm_aacp48k">Europa FM</option>
+      <option value="https://live7digi.antenaplay.ro/radiozu/radiozu-48000.m3u8">Radio ZU</option>
+      <option value="https://edge76.rdsnet.ro:8443/digifm/digifm.mp3">Digi FM</option>
+      <option value="https://live.magicfm.ro/magicfm.aacp">Magic FM</option>
+      <option value="https://astreaming.virginradio.ro:8443/virgin_aacp_64k">Virgin Radio Romania</option>
+      <option value="http://89.238.227.6:8300/">Radio România Actualități</option>
+      <option value="https://edge126.rdsnet.ro:8443/profm/profm.mp3">ProFM</option>
+      <option value="https://live.rockfm.ro/rockfm.aacp">Rock FM</option>
+      <option value="https://live.guerrillaradio.ro:8443/guerrilla.aacp">Radio Guerrilla</option>
+      <option value="https://live.nationalfm.ro:8443/nationalfm.aacp">National FM</option>
+      <option value="http://5.254.113.34:9123/romanticfm.aacp">Romantic FM</option>
+      <option value="https://edge126.rdsnet.ro:8443/dancefm/dancefm.mp3">Dance FM</option>
+      <option value="https://astreaming.vibefm.ro:8443/vibefm_aacp64k">Vibe FM</option>
+    </select>
+
+    <audio id="player" controls class="w-full">
+      Browser-ul tău nu suportă tag-ul audio.
+    </audio>
+
+    <div id="errorMsg" class="text-red-500 text-center mt-4 hidden">
+      <p>Eroare la încărcarea postului radio.</p>
+      <button id="prevBtn" class="bg-gray-300 px-3 py-1 rounded mr-2">Anterior</button>
+      <button id="nextBtn" class="bg-gray-300 px-3 py-1 rounded">Următor</button>
+    </div>
+  </div>
+
+  <script type="module">
+    const radioSelect = document.getElementById('radioSelect');
+    const player = document.getElementById('player');
+    const errorMsg = document.getElementById('errorMsg');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+
+    const noiseURL = "./noise.mp3";
+
+    const playRadio = (index) => {
+      radioSelect.selectedIndex = index;
+      player.src = radioSelect.value;
+      player.play();
+      errorMsg.classList.add('hidden');
+    };
+
+    radioSelect.addEventListener('change', (e) => {
+      if (e.target.value) {
+        player.src = e.target.value;
+        player.play();
+        errorMsg.classList.add('hidden');
+      } else {
+        player.pause();
+        player.src = '';
+      }
+    });
+
+    player.addEventListener('error', () => {
+      errorMsg.classList.remove('hidden');
+      player.src = noiseURL;
+      player.play();
+    });
+
+    const prevRadio = () => {
+      const prevIndex = radioSelect.selectedIndex > 1 ? radioSelect.selectedIndex - 1 : radioSelect.options.length - 1;
+      playRadio(prevIndex);
+    };
+
+    const nextRadio = () => {
+      const nextIndex = radioSelect.selectedIndex < radioSelect.options.length - 1 ? radioSelect.selectedIndex + 1 : 1;
+      playRadio(nextIndex);
+    };
+
+    prevBtn.addEventListener('click', prevRadio);
+    nextBtn.addEventListener('click', nextRadio);
+
+    navigator.mediaSession.setActionHandler('previoustrack', prevRadio);
+    navigator.mediaSession.setActionHandler('nexttrack', nextRadio);
+  </script>
+</body>
+</html>
