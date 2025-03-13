@@ -1,0 +1,57 @@
+#EXTM3U
+
+# Kiss FM
+#EXTINF:-1,Kiss FM
+https://live.kissfm.ro/kissfm.aacp
+
+# Europa FM
+#EXTINF:-1,Europa FM
+https://astreaming.europafm.ro:8443/europafm_aacp48k
+
+# Radio ZU
+#EXTINF:-1,Radio ZU
+https://live7digi.antenaplay.ro/radiozu/radiozu-48000.m3u8
+
+# Digi FM
+#EXTINF:-1,Digi FM
+https://edge76.rdsnet.ro:8443/digifm/digifm.mp3
+
+# Magic FM
+#EXTINF:-1,Magic FM
+https://live.magicfm.ro/magicfm.aacp
+
+# Virgin Radio Romania
+#EXTINF:-1,Virgin Radio Romania
+https://astreaming.virginradio.ro:8443/virgin_aacp_64k
+
+# Radio România Actualități
+#EXTINF:-1,Radio România Actualități
+http://89.238.227.6:8300/
+
+# ProFM
+#EXTINF:-1,ProFM
+https://edge126.rdsnet.ro:8443/profm/profm.mp3
+
+# Rock FM
+#EXTINF:-1,Rock FM
+https://live.rockfm.ro/rockfm.aacp
+
+# Radio Guerrilla
+#EXTINF:-1,Radio Guerrilla
+https://live.guerrillaradio.ro:8443/guerrilla.aacp
+
+# National FM
+#EXTINF:-1,National FM
+https://live.nationalfm.ro:8443/nationalfm.aacp
+
+# Romantic FM
+#EXTINF:-1,Romantic FM
+http://5.254.113.34:9123/romanticfm.aacp
+
+# Dance FM
+#EXTINF:-1,Dance FM
+https://edge126.rdsnet.ro:8443/dancefm/dancefm.mp3
+
+# Vibe FM
+#EXTINF:-1,Vibe FM
+https://astreaming.vibefm.ro:8443/vibefm_aacp64k

@@ -31,7 +31,11 @@
     <audio id="player" controls class="w-full">
       Browser-ul tău nu suportă tag-ul audio.
     </audio>
+    <audio id="loadingNoise" loop>
+      <source src="./noise2.mp3" type="audio/mpeg">
+    </audio>
 
+    <div id="loadingMsg" class="text-blue-500 text-center mt-4 hidden">Se încarcă...</div>
     <div id="errorMsg" class="text-red-500 text-center mt-4 hidden">
       <p>Eroare la încărcarea postului radio.</p>
       <button id="prevBtn" class="bg-gray-300 px-3 py-1 rounded mr-2">Anterior</button>
@@ -42,21 +46,26 @@
   <script type="module">
     const radioSelect = document.getElementById('radioSelect');
     const player = document.getElementById('player');
+    const loadingNoise = document.getElementById('loadingNoise');
+    const loadingMsg = document.getElementById('loadingMsg');
     const errorMsg = document.getElementById('errorMsg');
     const prevBtn = document.getElementById('prevBtn');
     const nextBtn = document.getElementById('nextBtn');
     const noiseURL = "./noise.mp3";
     let hasError = false;
-
+    let isLoading = false;
 
     const updateMediaSession = () => {
-      console.log('Update Media', {index:radioSelect.selectedIndex, text: radioSelect.options[radioSelect.selectedIndex].text})
       if ('mediaSession' in navigator) {
         navigator.mediaSession.metadata = new MediaMetadata({
-          title: hasError ? 'Eroare' : radioSelect.options[radioSelect.selectedIndex].text,
+          title: isLoading ? 'Se încarcă...' : hasError ? 'Eroare: Nu se poate reda' : radioSelect.options[radioSelect.selectedIndex].text,
           artist: 'Radio Online',
-          artwork: [{ src: `https://placehold.co/512x512?text=${radioSelect.options[radioSelect.selectedIndex].text}`, sizes: '512x512', type: 'image/png' }]
+          artwork: [{ src: `https://placehold.co/512x512?text=${isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : radioSelect.options[radioSelect.selectedIndex].text}` }]
         });
+        navigator.mediaSession.setActionHandler('previoustrack', prevRadio);
+        navigator.mediaSession.setActionHandler('nexttrack', nextRadio);
+        navigator.mediaSession.setActionHandler('pause', () => player.pause());
+        navigator.mediaSession.setActionHandler('play', () => player.play());
       }
     };
 
@@ -64,55 +73,50 @@
       console.log('playRadio');
       radioSelect.selectedIndex = index;
       player.src = radioSelect.value;
-      player.play();
-      errorMsg.classList.add('hidden');
+      isLoading = true;
       updateMediaSession();
+      loadingMsg.classList.remove('hidden');
+      loadingNoise.play();
+      player.play().then(() => {
+        isLoading = false;
+        loadingMsg.classList.add('hidden');
+        errorMsg.classList.add('hidden');
+        hasError = false;
+        loadingNoise.pause();
+        updateMediaSession();
+      }).catch(() => {
+        isLoading = false;
+        loadingMsg.classList.add('hidden');
+        errorMsg.classList.remove('hidden');
+        hasError = true;
+        loadingNoise.pause();
+        player.src = noiseURL;
+        player.play();
+        updateMediaSession();
+      });
     };
 
     radioSelect.addEventListener('change', (e) => {
-      console.log('Change', {e, value: e.target.value, index: radioSelect.selectedIndex})
       if (e.target.value) {
-        playRadio(radioSelect.selectedIndex)
-        errorMsg.classList.add('hidden');
-        hasError = false;
+        playRadio(radioSelect.selectedIndex);
       } else {
         player.pause();
         player.src = '';
       }
     });
 
-    player.addEventListener('error', () => {
-      console.log('Error');
-      errorMsg.classList.remove('hidden');
-      hasError = true
-      player.src = noiseURL;
-      player.play();
-      updateMediaSession();
-    });
-
     const prevRadio = () => {
-      console.log('prevRadio')
-      const prevIndex = radioSelect.selectedIndex > 1 ? radioSelect.selectedIndex - 1 : radioSelect.options.length - 1;
-      playRadio(prevIndex);
+      console.log('prevRadio');
+      playRadio(radioSelect.selectedIndex > 1 ? radioSelect.selectedIndex - 1 : radioSelect.options.length - 1);
     };
 
     const nextRadio = () => {
-      console.log('prevRadio')
-      const nextIndex = radioSelect.selectedIndex < radioSelect.options.length - 1 ? radioSelect.selectedIndex + 1 : 1;
-      playRadio(nextIndex);
+      console.log('nextRadio');
+      playRadio(radioSelect.selectedIndex < radioSelect.options.length - 1 ? radioSelect.selectedIndex + 1 : 1);
     };
 
     prevBtn.addEventListener('click', prevRadio);
     nextBtn.addEventListener('click', nextRadio);
-
-    updateMediaSession();
-
-    player.addEventListener('playing', () => {
-      console.log('Playing');
-      navigator.mediaSession.setActionHandler('previoustrack', prevRadio);
-      navigator.mediaSession.setActionHandler('nexttrack', nextRadio);
-    });
-
   </script>
 </body>
 </html>
