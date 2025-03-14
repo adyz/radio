@@ -14,18 +14,19 @@
       <option value="">Alege un post radio</option>
       <option value="https://live.kissfm.ro/kissfm.aacp">Kiss FM</option>
       <option value="https://astreaming.europafm.ro:8443/europafm_aacp48k">Europa FM</option>
-      <option value="https://live7digi.antenaplay.ro/radiozu/radiozu-48000.m3u8">Radio ZU</option>
-      <option value="https://edge76.rdsnet.ro:8443/digifm/digifm.mp3">Digi FM</option>
+      <option value="http://zuicast.digitalag.ro:9420/zu">Radio ZU</option>
+      <option value="https://edge76.rcs-rds.ro/digifm/digifm.mp3?111">Digi FM</option>
       <option value="https://live.magicfm.ro/magicfm.aacp">Magic FM</option>
       <option value="https://astreaming.virginradio.ro:8443/virgin_aacp_64k">Virgin Radio Romania</option>
-      <option value="http://89.238.227.6:8300/">Radio România Actualități</option>
-      <option value="https://edge126.rdsnet.ro:8443/profm/profm.mp3">ProFM</option>
+      <option value="https://stream4.srr.ro:8443/romania-actualitati">Radio România Actualități</option>
+      <option value="https://edge126.rcs-rds.ro/profm/profm.mp3?1741968671569">ProFM</option>
       <option value="https://live.rockfm.ro/rockfm.aacp">Rock FM</option>
-      <option value="https://live.guerrillaradio.ro:8443/guerrilla.aacp">Radio Guerrilla</option>
-      <option value="https://live.nationalfm.ro:8443/nationalfm.aacp">National FM</option>
-      <option value="http://5.254.113.34:9123/romanticfm.aacp">Romantic FM</option>
-      <option value="https://edge126.rdsnet.ro:8443/dancefm/dancefm.mp3">Dance FM</option>
+      <option value="https://live.guerrillaradio.ro:8443/guerrilla.aac">Radio Guerrilla</option>
+      <option value="https://asculta.nationalfm.ro:9102/nfm2">National FM</option>
+      <option value="https://edge126.rcs-rds.ro/profm/dancefm.mp3?1741969012508">Dance FM</option>
       <option value="https://astreaming.vibefm.ro:8443/vibefm_aacp64k">Vibe FM</option>
+      <option value="https://stream4.srr.ro:8443/romania-cultural">Radio România Cultural</option>
+      <option value="https://stream4.srr.ro:8443/romania-muzical">Radio România Muzical</option>
     </select>
 
     <audio id="player" controls class="w-full">
@@ -90,6 +91,11 @@
             }
             isPlaying = false;
           });
+
+          // lower volume for loading and error noises
+          if (htmlElement === loadingNoise || htmlElement === errorNoise) {
+            htmlElement.volume = 0.5;
+          }
         }
       };
 
@@ -134,7 +140,9 @@
         errorNoiseInstance.stop();
 
         updateMediaSession();
-      }).catch(() => {
+      }).catch(error => {
+
+        console.log('Error playing radio:', error);
         
         isLoading = false;
         hasError = true;
