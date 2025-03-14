@@ -166,6 +166,41 @@
       console.log('nextRadio');
       playRadio(radioSelect.selectedIndex < radioSelect.options.length - 1 ? radioSelect.selectedIndex + 1 : 1);
     };
+
+    if (window.electronAPI) {
+      window.electronAPI.onMediaControl((command) => {
+        console.log("Comandă media primită:", command);
+
+
+        if (command === "playpause") {
+          if (player.paused) {
+            player.play();
+          } else {
+            player.pause();
+          }
+        } else if (command === "next") {
+          // Implementare pentru trecerea la următoarea melodie
+          console.log("Next track (nu este implementat)");
+          nextRadio();
+        } else if (command === "previous") {
+          // Implementare pentru melodia anterioară
+          console.log("Previous track (nu este implementat)");
+          prevRadio();
+        }
+      });
+
+        // **Monitorizează starea audio și o trimite la Electron**
+      document.addEventListener("DOMContentLoaded", () => {
+        function updatePlaybackState() {
+          window.electronAPI.updatePlaybackState(!player.paused);
+        }
+
+        player.addEventListener("play", updatePlaybackState);
+        player.addEventListener("pause", updatePlaybackState);
+      });
+      
+    }
+
   </script>
 </body>
 </html>
