@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="ro">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -7,7 +8,7 @@
   <script src="./tailwindjs.js"></script>
   <!-- Favicon -->
   <link rel="icon" href="./favicon.png" type="image/x-icon">
-  <meta name="theme-color" content="#fffdef"/>
+  <meta name="theme-color" content="#fffdef" />
   <meta name="description" content="Coji Radio Player - Ascultă posturile tale de radio preferate.">
   <!-- ios theme color for head -->
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -17,7 +18,7 @@
   <link rel="apple-touch-startup-image" href="./logo-large.png">
 
   <style type="text/tailwindcss">
-      @theme {
+    @theme {
         --color-Border: #eeebd8;
         --color-Brown: #543416;
         --color-LightBrown: #865E5E;
@@ -35,58 +36,67 @@
   </style>
 
 </head>
-<body class="bg-Bg min-h-screen flex items-center justify-center flex-col p-4">
-    <div class="text-center mb-16">
-      <img src="./logo-large.png" alt="Coji Radio Player" class="w-28 mx-auto">
-      <h1 class="uppercase -mt-8 mb-12 text-sm text-Brown">Radio Player Romania 🇷🇴 </h1>
-    </div>
 
-    <!-- aadd gradient  -->
-  <div class="rounded-3xl shadow-xl w-full max-w-[540px] bg-gradient-to-t from-White to-bg text-white">
+<body class="bg-Bg p-4">
+  <div class="text-center">
+    <img src="./logo-large.png" alt="Coji Radio Player" class="w-28 mx-auto">
+    <h1 class="uppercase -mt-8 text-sm text-Brown">Radio Player Romania 🇷🇴 </h1>
+  </div>
 
-    <!-- Poster Image -->
-    <div id="posterImage" class="mx-auto rounded-3xl overflow-hidden  w-[128px] h-[128px] -mt-16 bg-Red border border-Border">
-      <img src="https://placehold.co/512x512?text=Coji%20Radio%20Player" alt="Coji Radio Player" class="w-full h-full object-cover">
-    </div>
+  <!-- aadd gradient  -->
+  <div
+    class="rounded-3xl shadow-xl w-full max-w-[540px] bg-gradient-to-t from-White to-bg text-white h-[calc(100dvh-180px)] flex flex-col align-bottom justify-end">
 
-
-    <!-- PlayerControls -->
-    <!-- Button with move down a bit on press-->
-
-    <div class="flex items-center justify-center mt-8">
-      <button id="prevButton" class="stroke-Red hover:stroke-Brown w-1/3 flex justify-center active:translate-y-1">
-        <svg class="h-32 max-w-[20%]" viewBox="0 0 65 107" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M61.8923 103.771L3 53.4709" stroke-width="6" stroke-linecap="round"/>
-          <path d="M3 53.3854L61.8923 3.08551" stroke-width="6" stroke-linecap="round"/>
-        </svg>
-          
-      </button>
-      <button id="playButton" class="stroke-Red hover:stroke-Brown w-1/3 flex justify-center active:translate-y-1">
-        <svg class="h-32 max-w-[50%]" viewBox="0 0 129 129" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="64.5" cy="64.5" r="62" stroke-width="6" stroke-linecap="round"/>
-          <path d="M51.8684 36.2605L90.4966 64.1943L51.8684 92.1281L51.8684 36.2605Z" stroke-width="5" stroke-linecap="round"/>
-        </svg>
-      </button>
-      <button id="pauseButton" class="stroke-Red hover:stroke-Brown w-1/3 justify-center flex hidden active:translate-y-1">
-        <svg class="h-32 max-w-[50%]" viewBox="0 0 129 129" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="64.5" cy="64.5" r="62" stroke-width="6" stroke-linecap="round"/>
-          <path d="M51 38L51 96" stroke-width="6" stroke-linecap="round"/>
-          <path d="M78 38L78 96" stroke-width="6" stroke-linecap="round"/>
-        </svg>
-      </button>
-      <button id="nextButton" class="stroke-Red hover:stroke-Brown w-1/3 flex justify-center active:translate-y-1">
-        <svg class="h-32 max-w-[20%]" viewBox="0 0 65 106" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M3.2146 3L62.1069 53.2999" stroke-width="6" stroke-linecap="round"/>
-          <path d="M62.1069 53.3854L3.21459 103.685" stroke-width="6" stroke-linecap="round"/>
-        </svg>          
-      </button>
-    </div>
+    <div class="">
+      <!-- Poster Image -->
+      <div id="posterImage"
+        class="mx-auto rounded-3xl overflow-hidden w-[128px] h-[128px] bg-Red">
+        <img src="https://placehold.co/512x512?text=Coji%20Radio%20Player" alt="Coji Radio Player"
+          class="w-full h-full object-cover">
+      </div>
 
 
+      <!-- PlayerControls -->
+      <!-- Button with move down a bit on press-->
 
-    <div class="h-14">
-      <div id="loadingMsg" class="text-Brown text-center p-2 invisible ">Se încarcă...</div>
-      <div id="errorMsg" class="text-Red text-center p-2 invisible">Eroare la încărcarea postului radio.</div>
+      <div class="flex items-center justify-center mt-20">
+        <button id="prevButton" class="stroke-Red hover:stroke-Brown w-1/3 flex justify-center active:translate-y-1">
+          <svg class="h-20 max-w-[20%]" viewBox="0 0 65 107" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M61.8923 103.771L3 53.4709" stroke-width="6" stroke-linecap="round" />
+            <path d="M3 53.3854L61.8923 3.08551" stroke-width="6" stroke-linecap="round" />
+          </svg>
+
+        </button>
+        <button id="playButton" class="stroke-Red hover:stroke-Brown w-1/3 flex justify-center active:translate-y-1">
+          <svg class="h-20 max-w-[50%]" viewBox="0 0 129 129" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="64.5" cy="64.5" r="62" stroke-width="6" stroke-linecap="round" />
+            <path d="M51.8684 36.2605L90.4966 64.1943L51.8684 92.1281L51.8684 36.2605Z" stroke-width="5"
+              stroke-linecap="round" />
+          </svg>
+        </button>
+        <button id="pauseButton"
+          class="stroke-Red hover:stroke-Brown w-1/3 justify-center flex hidden active:translate-y-1">
+          <svg class="h-20 max-w-[50%]" viewBox="0 0 129 129" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="64.5" cy="64.5" r="62" stroke-width="6" stroke-linecap="round" />
+            <path d="M51 38L51 96" stroke-width="6" stroke-linecap="round" />
+            <path d="M78 38L78 96" stroke-width="6" stroke-linecap="round" />
+          </svg>
+        </button>
+        <button id="nextButton" class="stroke-Red hover:stroke-Brown w-1/3 flex justify-center active:translate-y-1">
+          <svg class="h-20 max-w-[20%]" viewBox="0 0 65 106" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M3.2146 3L62.1069 53.2999" stroke-width="6" stroke-linecap="round" />
+            <path d="M62.1069 53.3854L3.21459 103.685" stroke-width="6" stroke-linecap="round" />
+          </svg>
+        </button>
+      </div>
+
+
+
+      <div class="h-10">
+        <div id="loadingMsg" class="text-Brown text-center p-2 invisible ">Se încarcă...</div>
+        <div id="errorMsg" class="text-Red text-center p-2 invisible">Eroare la încărcarea postului radio.</div>
+      </div>
+
     </div>
 
   </div>
@@ -135,7 +145,7 @@
     const errorNoise = document.getElementById('errorNoise');
     const loadingMsg = document.getElementById('loadingMsg');
     const errorMsg = document.getElementById('errorMsg');
-    
+
     const prevButton = document.getElementById('prevButton');
     const playButton = document.getElementById('playButton');
     const pauseButton = document.getElementById('pauseButton');
@@ -186,7 +196,7 @@
 
       instance.play = () => {
         if (!isPlaying) {
-          console.log('Play audio', {htmlSrc: htmlElement.src, instanceSrc: instance.src});
+          console.log('Play audio', { htmlSrc: htmlElement.src, instanceSrc: instance.src });
           htmlElement.src = instance.src;
           isPlaying = true;
           htmlElement.play().catch((error) => {
@@ -205,7 +215,7 @@
 
       instance.stop = () => {
         if (isPlaying) {
-          console.log('Stop audio', {htmlSrc: htmlElement.src, instanceSrc: instance.src});
+          console.log('Stop audio', { htmlSrc: htmlElement.src, instanceSrc: instance.src });
           htmlElement.pause();
           htmlElement.src = '';
           isPlaying = false;
@@ -220,9 +230,9 @@
     const errorNoiseInstance = audioInstance(errorNoise);
 
     const playRadio = (index) => {
-      console.log('playRadio', {index: index, value: radioSelect.value});
+      console.log('playRadio', { index: index, value: radioSelect.value });
       radioSelect.selectedIndex = index;
- 
+
       isLoading = true;
       hasError = false;
 
@@ -230,13 +240,13 @@
 
       errorNoiseInstance.stop();
       loadingNoiseInstance.play();
-      
+
       loadingMsg.classList.remove('invisible');
       errorMsg.classList.add('invisible');
-      
 
 
-    
+
+
       player.src = radioSelect.value;
 
 
@@ -245,24 +255,24 @@
         hasError = false;
         loadingMsg.classList.add('invisiblex');
         errorMsg.classList.add('invisiblex');
-        
+
         loadingNoiseInstance.stop();
 
         updateMediaSession();
       }).catch(error => {
 
-        if(error.name === 'AbortError') {
+        if (error.name === 'AbortError') {
           return;
         }
 
         console.log('Error playing radio:', error);
-        
+
         isLoading = false;
         hasError = true;
 
         loadingMsg.classList.add('invisible');
         errorMsg.classList.remove('invisible');
-        
+
         loadingNoiseInstance.stop();
         errorNoiseInstance.play();
         updateMediaSession();
@@ -310,7 +320,7 @@
         }
       });
 
-        // **Monitorizează starea audio și o trimite la Electron**
+      // **Monitorizează starea audio și o trimite la Electron**
       document.addEventListener("DOMContentLoaded", () => {
         function updatePlaybackState() {
           window.electronAPI.updatePlaybackState(!player.paused);
@@ -319,7 +329,7 @@
         player.addEventListener("play", updatePlaybackState);
         player.addEventListener("pause", updatePlaybackState);
       });
-      
+
     }
 
 
@@ -359,4 +369,5 @@
 
   </script>
 </body>
+
 </html>
