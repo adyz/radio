@@ -16,7 +16,7 @@
   <link rel="apple-touch-icon" href="./logo-large.png">
   <link rel="apple-touch-startup-image" href="./logo-large.png">
 
-  
+
 </head>
 <body class="bg-gray-100 min-h-screen flex items-center justify-center flex-col p-8">
     <div class="text-center mb-16">
@@ -184,7 +184,7 @@
     const loadingNoiseInstance = audioInstance(loadingNoise);
     const errorNoiseInstance = audioInstance(errorNoise);
 
-    const playRadio = async (index) => {
+    const playRadio = (index) => {
       console.log('playRadio');
  
       isLoading = true;
@@ -194,18 +194,12 @@
 
       loadingNoiseInstance.stop();
       errorNoiseInstance.stop();
-      
       loadingNoiseInstance.play();
-
- 
-
       
       loadingMsg.classList.remove('invisible');
       errorMsg.classList.add('invisible');
       
       updateMediaSession();
-
-      await new Promise(resolve => setTimeout(resolve, 1000));
 
       radioSelect.selectedIndex = index;
       player.src = radioSelect.value;
