@@ -87,7 +87,7 @@
     <source src="./error.mp3" type="audio/mpeg">
   </audio>
 
-  <select id="radioSelect" class="w-full border rounded-lg p-2 m-12  max-w-[540px]">
+  <select id="radioSelect" class="border rounded-lg p-2 m-12  w-[70%] max-w-[540px]">
     <option value="">Alege un post radio</option>
     <option value="https://live.kissfm.ro/kissfm.aacp">Kiss FM</option>
     <option value="https://astreaming.europafm.ro:8443/europafm_aacp48k">Europa FM</option>
@@ -105,6 +105,12 @@
     <option value="https://stream4.srr.ro:8443/romania-cultural">Cultural</option>
     <option value="https://stream4.srr.ro:8443/romania-muzical">Muzical</option>
   </select>
+
+  <!-- Creator info: Adrian Florescu (http://adrianf.com) -->
+  <footer class="text-center text-xs text-slate-500 mt-8">
+    <p>Coji Radio Player</p>
+    <p>© 2025 Adrian Florescu | <a href="https://adrianf.com" target="_blank" rel="noopener">adrianf.com</a></p>
+  </footer>
 
   <script type="module">
     const radioSelect = document.getElementById('radioSelect');
@@ -211,14 +217,11 @@
         errorMsg.classList.add('invisible');
         
         loadingNoiseInstance.stop();
-        errorNoiseInstance.stop();
 
         updateMediaSession();
       }).catch(error => {
 
         if(error.name === 'AbortError') {
-          isLoading = false;
-          hasError = false;
           return;
         }
 
