@@ -189,17 +189,16 @@
  
       isLoading = true;
       hasError = false;
-      player.pause();
-      player.src = '';
 
-      loadingNoiseInstance.stop();
+      updateMediaSession();
+
       errorNoiseInstance.stop();
       loadingNoiseInstance.play();
       
       loadingMsg.classList.remove('invisible');
       errorMsg.classList.add('invisible');
       
-      updateMediaSession();
+
 
       radioSelect.selectedIndex = index;
       player.src = radioSelect.value;
@@ -218,6 +217,8 @@
       }).catch(error => {
 
         if(error.name === 'AbortError') {
+          isLoading = false;
+          hasError = false;
           return;
         }
 
