@@ -168,7 +168,7 @@
       if ('mediaSession' in navigator) {
 
         navigator.mediaSession.metadata = new MediaMetadata({
-          title: isLoading ? `Se încarcă...${title}` : hasError ? `Eroare la încărcarea ${title}` : `📡🎶 ${title}`,
+          title: isLoading ? `Se încarcă...${title}` : hasError ? `Eroare la încărcarea ${title}` : title,
           artist: `Coji Radio Player | ${title}`,
           artwork: [{ src: cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title) }]
         });
@@ -182,7 +182,7 @@
       posterImage.querySelector('img').src = cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title);
 
       // update document title
-      document.title = `Coji Radio Player | ${isLoading ? `Se incarca ${title}` : hasError ? 'Eroare' : `📡🎶 ${title}`}`;
+      document.title = `Coji Radio Player | ${isLoading ? `Se incarca ${title}` : hasError ? 'Eroare' : title}`;
 
       // update loading message
       loadingMsg.innerText = isLoading ? `Se incarca ${title}...` : '';
@@ -254,8 +254,8 @@
       player.play().then(() => {
         isLoading = false;
         hasError = false;
-        loadingMsg.classList.add('invisiblex');
-        errorMsg.classList.add('invisiblex');
+        loadingMsg.classList.add('invisible');
+        errorMsg.classList.add('invisible');
 
         loadingNoiseInstance.stop();
 
