@@ -38,7 +38,7 @@
 </head>
 
 <body class="bg-Bg p-4 flex flex-col justify-center items-center">
-  <div class="text-center">
+  <div class="text-center relative z-10">
     <img src="./logo-large.png" alt="Coji Radio Player" class="w-28 mx-auto">
     <h1 class="uppercase -mt-8 text-sm text-Brown">Radio Player Romania 🇷🇴 </h1>
   </div>
@@ -46,12 +46,12 @@
   
 
   <div
-    class="rounded-3xl shadow-xl w-full max-w-[540px] bg-gradient-to-t from-White to-bg text-white h-[calc(100dvh-180px)] flex flex-col align-center justify-end relative">
+    class="rounded-3xl shadow-xl w-full max-w-[540px] bg-gradient-to-t from-White to-bg text-white min-h-[calc(100dvh-180px)] flex flex-col align-center justify-end relative">
     <div class="absolute top-[10%] left-0 w-[120%] h-[90%] -m-[10%] bg-gradient-to-b from-Bg to-transparent"></div>
     <div class="">
       <!-- Poster Image -->
       <div id="posterImage"
-        class="mx-auto rounded-3xl overflow-hidden w-[128px] h-[128px] bg-Red border border-Border">
+        class="mx-auto rounded-3xl overflow-hidden w-[128px] h-[128px] bg-Red border border-Border relative z-10 mt-10">
         <img src="https://placehold.co/512x512?text=Coji%20Radio%20Player" alt="Coji Radio Player"
           class="w-full h-full object-cover">
       </div>
