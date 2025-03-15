@@ -131,12 +131,13 @@
     let isLoading = false;
 
     const updateMediaSession = () => {
+      const title = radioSelect.options[radioSelect.selectedIndex].text;
       if ('mediaSession' in navigator) {
-        const title = radioSelect.options[radioSelect.selectedIndex].text;
+
         navigator.mediaSession.metadata = new MediaMetadata({
           title: isLoading ? `Se încarcă...${title}` : hasError ? `Eroare la încărcarea ${title}` : title,
           artist: `Coji Radio Player | ${title}`,
-          artwork: [{ src: `https://placehold.co/512x512?text=${isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : radioSelect.options[radioSelect.selectedIndex].text}` }]
+          artwork: [{ src: `https://placehold.co/512x512?text=${isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title}` }]
         });
         navigator.mediaSession.setActionHandler('previoustrack', prevRadio);
         navigator.mediaSession.setActionHandler('nexttrack', nextRadio);
@@ -145,7 +146,13 @@
       }
 
       // update poster image
-      posterImage.querySelector('img').src = `https://placehold.co/512x512?text=${isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : radioSelect.options[radioSelect.selectedIndex].text}`;
+      posterImage.querySelector('img').src = `https://placehold.co/512x512?text=${isLoading ? `Se incarca ${title}` : hasError ? 'Eroare' : title}`;
+
+      // update document title
+      document.title = `Coji Radio Player | ${isLoading ? `Se incarca ${title}` : hasError ? 'Eroare' : title}`;
+
+      // update loading message
+      loadingMsg.innerText = isLoading ? `Se incarca ${title}...` : '';
     };
 
     function audioInstance(htmlElement) {
@@ -191,7 +198,8 @@
     const errorNoiseInstance = audioInstance(errorNoise);
 
     const playRadio = (index) => {
-      console.log('playRadio');
+      console.log('playRadio', {index: index, value: radioSelect.value});
+      radioSelect.selectedIndex = index;
  
       isLoading = true;
       hasError = false;
@@ -206,7 +214,7 @@
       
 
 
-      radioSelect.selectedIndex = index;
+    
       player.src = radioSelect.value;
 
 
