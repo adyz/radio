@@ -271,8 +271,9 @@
       loadingMsg.classList.remove('invisible');
       errorMsg.classList.add('invisible');
 
+      player.pause();
       player.src = radioSelect.value;
-
+      player.load();
 
       player.play().then(() => {
         isLoading = false;
@@ -399,6 +400,16 @@
       playButton.classList.remove('hidden');
       pauseButton.classList.add('hidden');
       lastPauseTime = performance.now();
+    });
+
+    player.addEventListener("canplay", async () => {
+      console.log("Can play");
+        try {
+            console.log("Redarea a început");
+            await player.play();
+        } catch (error) {
+            console.error("Redarea a eșuat:", error);
+        }
     });
 
     // prev and next buttons
