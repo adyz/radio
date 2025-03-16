@@ -17,6 +17,9 @@
   <link rel="apple-touch-icon" href="./logo-large.png">
   <link rel="apple-touch-startup-image" href="./logo-large.png">
 
+  <!-- manifest -->
+  <link rel="manifest" href="./manifest.json">
+
   <style type="text/tailwindcss">
     @theme {
         --color-Border: #eeebd8;
@@ -412,6 +415,11 @@
     worker.onmessage = () => {
         console.log("Mențin conexiunea activă...");
     };
+
+    if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("/sw.js");
+    }
+
   </script>
 </body>
 
