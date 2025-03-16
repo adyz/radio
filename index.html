@@ -402,16 +402,6 @@
       lastPauseTime = performance.now();
     });
 
-    player.addEventListener("canplay", async () => {
-      console.log("Can play");
-        try {
-            console.log("Redarea a început");
-            await player.play();
-        } catch (error) {
-            console.error("Redarea a eșuat:", error);
-        }
-    });
-
     // prev and next buttons
     prevButton.addEventListener('click', prevRadio);
     nextButton.addEventListener('click', nextRadio);
