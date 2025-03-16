@@ -166,6 +166,8 @@
 
     const posterImage = document.getElementById('posterImage');
 
+    const isInBackground = document.hidden;
+
     let hasError = false;
     let isLoading = false;
 
@@ -184,10 +186,22 @@
           artist: `Coji Radio Player | ${title}`,
           artwork: [{ src: cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title) }]
         });
-        navigator.mediaSession.setActionHandler('previoustrack', prevRadio);
-        navigator.mediaSession.setActionHandler('nexttrack', nextRadio);
-        navigator.mediaSession.setActionHandler('pause', () => player.pause());
-        navigator.mediaSession.setActionHandler('play', () => player.play());
+        navigator.mediaSession.setActionHandler('previoustrack', () => {
+          console.log('Previous media session');
+          prevRadio()
+        });
+        navigator.mediaSession.setActionHandler('nexttrack', () => {
+          console.log('Next media session');
+          nextRadio()
+        });
+        navigator.mediaSession.setActionHandler('pause', () => {
+          console.log('Pause media session');
+          player.pause()
+        });
+        navigator.mediaSession.setActionHandler('play', () => {
+          console.log('Play media session');
+          player.play()
+        });
       }
 
       // update poster image
@@ -370,15 +384,36 @@
       pauseButton.classList.remove('hidden');
     });
 
-    player.addEventListener('pause', () => {
+    player.addEventListener('pause', (e) => {
       playButton.classList.remove('hidden');
       pauseButton.classList.add('hidden');
+      if (!player.ended && !player.seeking) {
+        console.log('Player-ul a fost întrerupt de altceva.', e);
+
+        if (isInBackground) {
+            // stop the player for good
+            player.pause();
+            player.src = '';
+        }
+
+      } else {
+        console.log('Player-ul a fost oprit de utilizator.', e);
+      }
     });
 
     // prev and next buttons
     prevButton.addEventListener('click', prevRadio);
     nextButton.addEventListener('click', nextRadio);
 
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        console.log('Tab-ul a fost ascuns.');
+        isInBackground = true;
+      } else {
+        console.log('Tab-ul a revenit în prim-plan.');
+        isInBackground = false;
+      }
+    });
 
   </script>
 </body>
