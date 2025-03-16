@@ -377,14 +377,30 @@
       player.pause();
     });
 
-    player.addEventListener('play', () => {
+
+    let lastPauseTime = null;
+
+    player.addEventListener('play', (e) => {
       playButton.classList.add('hidden');
       pauseButton.classList.remove('hidden');
+      const now = performance.now();
+      const timeDiff = now - lastPauseTime;
+      if (lastPauseTime && timeDiff > 2000) {
+        e.preventDefault();
+        console.log('Restart radio after pause', { timeDiff });
+        player.pause();
+        player.src = '';
+        playRadio(radioSelect.selectedIndex);
+      }
+
+      lastPauseTime = null;
+
     });
 
     player.addEventListener('pause', () => {
       playButton.classList.remove('hidden');
       pauseButton.classList.add('hidden');
+      lastPauseTime = performance.now();
     });
 
     // prev and next buttons
