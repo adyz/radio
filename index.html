@@ -40,7 +40,26 @@
         --color-LogoBody: #6FA68C;
         --color-LogoLeg: #216155;
         --color-LogoWing: #74CCA2;
+        --color-Logo: #3a3a30;
       }
+
+    @media (prefers-color-scheme: dark) {
+        :root {
+          --color-Border: #3a3a30;
+          --color-Brown: #F5EFB9;
+          --color-LightBrown: #9F9C7D;
+          --color-LighterBrown: #716E59;
+          --color-SuperLighterBrown: #525040;
+          --color-Bg: #434238;
+          --color-Red: #9F9C7D;
+          --color-Green: #52870f;
+          --color-White: #28281F;
+          --color-LogoBody: #6FA68C;
+          --color-LogoLeg: #216155;
+          --color-LogoWing: #74CCA2;
+          --color-Logo: #fffdef;
+        }
+    }
 
   </style>
 
@@ -48,8 +67,33 @@
 
 <body class="bg-Bg p-4 flex flex-col justify-center items-center">
   <div class="text-center relative z-10">
-    <img src="./logo-large.png" alt="Coji Radio Player" class="w-28 mx-auto">
-    <h1 class="uppercase -mt-8 text-sm text-Brown">Radio Player Romania
+    <svg class="h-28 fill-Logo" version="1.0" xmlns="http://www.w3.org/2000/svg" width="970.000000pt" height="979.000000pt"
+      viewBox="0 0 970.000000 979.000000" preserveAspectRatio="xMidYMid meet">
+
+      <g transform="translate(0.000000,979.000000) scale(0.100000,-0.100000)" stroke="none">
+        <path d="M5705 9270 c-641 -33 -1137 -233 -1650 -665 -273 -231 -617 -611
+-717 -792 -22 -40 -42 -73 -45 -73 -3 0 -44 24 -91 53 -340 209 -759 371 -957
+371 -145 -1 -235 -55 -397 -239 -545 -619 -884 -1537 -979 -2650 -46 -537 105
+-1380 371 -2075 102 -268 279 -636 371 -772 305 -452 666 -765 1019 -882 172
+-57 259 -69 455 -63 199 6 297 26 530 107 122 42 161 52 208 50 33 -1 83 6
+113 16 32 10 58 13 63 8 4 -5 34 -42 66 -83 71 -88 189 -192 303 -268 85 -56
+293 -167 368 -196 23 -9 52 -30 64 -46 32 -46 101 -89 167 -105 44 -10 96 -37
+203 -106 230 -149 380 -217 575 -263 135 -31 381 -30 525 2 351 78 706 272
+1053 575 198 174 518 577 739 931 343 551 609 1188 687 1645 127 738 123 1392
+-10 2005 -47 212 -98 291 -229 354 -47 22 -69 26 -145 26 -134 -1 -160 -16
+-559 -340 -186 -151 -340 -275 -341 -275 -1 0 61 190 138 423 l140 422 1 100
+c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
+-10 -12 179 c-47 692 -225 1229 -552 1665 -147 197 -499 530 -619 587 -75 36
+-130 40 -385 27z m207 -820 c335 -313 523 -697 598 -1226 23 -165 45 -543 35
+-619 l-6 -54 -117 -62 c-417 -220 -737 -434 -1092 -729 -253 -210 -451 -440
+-706 -817 -48 -70 -97 -139 -110 -153 -41 -45 -223 -361 -310 -537 -47 -95
+-87 -173 -89 -173 -2 0 -16 5 -31 10 -15 6 -102 33 -193 61 -194 59 -283 99
+-367 162 -138 105 -226 278 -270 532 -25 146 -30 436 -10 590 52 394 158 799
+313 1195 75 193 263 577 360 738 124 205 422 536 643 714 372 299 762 453
+1160 457 l95 1 97 -90z" />
+      </g>
+    </svg>
+    <h1 class="uppercase text-sm text-Brown">Radio Player Romania
       <span class="inline-flex items-center" title="Steagul României">
         <span class="sr-only">🇷🇴</span>
         <span class="w-[.5em] h-[0.75em] bg-blue-600 inline-block"></span>
@@ -60,7 +104,7 @@
     </h1>
   </div>
 
-  
+
 
   <div
     class="rounded-3xl shadow-xl w-full max-w-[540px] bg-gradient-to-t from-White to-bg text-white min-h-[calc(100dvh-180px)] flex flex-col align-center justify-end relative">
@@ -78,14 +122,16 @@
       <!-- Button with move down a bit on press-->
 
       <div class="flex items-center justify-center mt-20 mb-10 relative z-10">
-        <button id="prevButton" class="stroke-Red hover:stroke-Brown w-1/3 flex justify-center active:translate-y-1 active:stroke-Brown">
+        <button id="prevButton"
+          class="stroke-Red hover:stroke-Brown w-1/3 flex justify-center active:translate-y-1 active:stroke-Brown">
           <svg class="h-20 max-w-[20%]" viewBox="0 0 65 107" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M61.8923 103.771L3 53.4709" stroke-width="6" stroke-linecap="round" />
             <path d="M3 53.3854L61.8923 3.08551" stroke-width="6" stroke-linecap="round" />
           </svg>
 
         </button>
-        <button id="playButton" class="stroke-Red hover:stroke-Brown w-1/3 flex justify-center active:translate-y-1 active:stroke-Brown">
+        <button id="playButton"
+          class="stroke-Red hover:stroke-Brown w-1/3 flex justify-center active:translate-y-1 active:stroke-Brown">
           <svg class="h-20 max-w-[50%]" viewBox="0 0 129 129" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="64.5" cy="64.5" r="62" stroke-width="6" stroke-linecap="round" />
             <path d="M51.8684 36.2605L90.4966 64.1943L51.8684 92.1281L51.8684 36.2605Z" stroke-width="5"
@@ -100,7 +146,8 @@
             <path d="M78 38L78 96" stroke-width="6" stroke-linecap="round" />
           </svg>
         </button>
-        <button id="nextButton" class="stroke-Red hover:stroke-Brown w-1/3 flex justify-center active:translate-y-1 active:stroke-Brown">
+        <button id="nextButton"
+          class="stroke-Red hover:stroke-Brown w-1/3 flex justify-center active:translate-y-1 active:stroke-Brown">
           <svg class="h-20 max-w-[20%]" viewBox="0 0 65 106" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M3.2146 3L62.1069 53.2999" stroke-width="6" stroke-linecap="round" />
             <path d="M62.1069 53.3854L3.21459 103.685" stroke-width="6" stroke-linecap="round" />
@@ -112,7 +159,8 @@
 
       <div class="absolute z-10 bottom-10 w-full text-center text-sm">
         <div id="loadingMsg" class="text-Brown absolute top-0 w-full text-center invisible">Se încarcă...</div>
-        <div id="errorMsg" class="text-Red absolute top-0 w-full text-center invisible">Eroare la încărcarea postului radio.</div>
+        <div id="errorMsg" class="text-Red absolute top-0 w-full text-center invisible">Eroare la încărcarea postului
+          radio.</div>
       </div>
 
     </div>
@@ -158,7 +206,7 @@
 
   <script type="module">
 
-    document.addEventListener("touchstart", function () {}, true);
+    document.addEventListener("touchstart", function () { }, true);
 
 
     const radioSelect = document.getElementById('radioSelect');
@@ -412,7 +460,7 @@
       pauseButton.classList.add('hidden');
       lastPauseTime = performance.now();
     });
-    
+
 
     // prev and next buttons
     prevButton.addEventListener('click', prevRadio);
@@ -421,14 +469,14 @@
 
     const worker = new Worker("./keepAlive.js");
     worker.onmessage = () => {
-        console.log("Mențin conexiunea activă...");
+      console.log("Mențin conexiunea activă...");
     };
 
     if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('/sw.js')
+      navigator.serviceWorker.register('/sw.js')
         .then(reg => console.log('Service Worker registered'))
         .catch(err => console.error('Service Worker registration failed:', err));
-}
+    }
 
   </script>
 </body>
