@@ -183,7 +183,7 @@
     function cloudinaryImageUrl(text, live = false) {
       const url_non_live = 'nndti4oybhdzggf8epvh';
       const url_live = 'h9iqk9l6qqsdfynfndjw';
-      return `https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_60,y_60,c_fit,l_text:arial_90:${text}/${live ? url_live : url_non_live}`;
+      return `https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:${text}/${live ? url_live : url_non_live}`;
     }
 
     posterImage.querySelector('img').src = cloudinaryImageUrl('Coji Radio Player');
@@ -195,7 +195,7 @@
         navigator.mediaSession.metadata = new MediaMetadata({
           title: isLoading ? `Se încarcă...${title}` : hasError ? `Eroare la încărcarea ${title}` : title,
           artist: `Coji Radio Player | ${title}`,
-          artwork: [{ src: cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, title && !isLoading ? true : false) }]
+          artwork: [{ src: cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, title && !isLoading && !hasError ? true : false) }]
         });
         navigator.mediaSession.setActionHandler('previoustrack', () => {
           console.log('prev by media session');
@@ -216,7 +216,7 @@
       }
 
       // update poster image
-      posterImage.querySelector('img').src = cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, title && !isLoading ? true : false);
+      posterImage.querySelector('img').src = cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, title && !isLoading && !hasError ? true : false);
 
       // update document title
       document.title = `Coji Radio Player | ${isLoading ? `Se incarca ${title}` : hasError ? 'Eroare' : title}`;
