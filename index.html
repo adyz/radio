@@ -166,8 +166,6 @@
 
     const posterImage = document.getElementById('posterImage');
 
-    let isInBackground = document.hidden;
-
     let hasError = false;
     let isLoading = false;
 
@@ -370,14 +368,7 @@
         if (radioSelect.selectedIndex === 0) {
           playRadio(1);
         } else {
-          console.log('try to resume', {player, playerSrc: player.src});
-          // if player src is same as window src, call playRadio
-          if (player.src === window.location.href) {
-            const selectedIndex = radioSelect.selectedIndex;
-            playRadio(selectedIndex);
-          } else {
-            player.play();
-          }
+          player.play();
         }
       }
     });
@@ -391,36 +382,15 @@
       pauseButton.classList.remove('hidden');
     });
 
-    player.addEventListener('pause', (e) => {
+    player.addEventListener('pause', () => {
       playButton.classList.remove('hidden');
       pauseButton.classList.add('hidden');
-      if (!player.ended && !player.seeking) {
-        console.log('Player-ul a fost întrerupt de altceva.', e);
-
-        if (isInBackground) {
-            // stop the player for good
-            player.pause();
-            player.src = '';
-        }
-
-      } else {
-        console.log('Player-ul a fost oprit de utilizator.', e);
-      }
     });
 
     // prev and next buttons
     prevButton.addEventListener('click', prevRadio);
     nextButton.addEventListener('click', nextRadio);
 
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        console.log('Tab-ul a fost ascuns.');
-        isInBackground = true;
-      } else {
-        console.log('Tab-ul a revenit în prim-plan.');
-        isInBackground = false;
-      }
-    });
 
   </script>
 </body>
