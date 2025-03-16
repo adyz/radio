@@ -408,6 +408,10 @@
     nextButton.addEventListener('click', nextRadio);
 
 
+    const worker = new Worker("./keepAlive.js");
+    worker.onmessage = () => {
+        console.log("Mențin conexiunea activă...");
+    };
   </script>
 </body>
 
