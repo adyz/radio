@@ -184,10 +184,24 @@
           artist: `Coji Radio Player | ${title}`,
           artwork: [{ src: cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title) }]
         });
-        navigator.mediaSession.setActionHandler('previoustrack', prevRadio);
-        navigator.mediaSession.setActionHandler('nexttrack', nextRadio);
-        navigator.mediaSession.setActionHandler('pause', () => player.pause());
-        navigator.mediaSession.setActionHandler('play', () => player.play());
+        navigator.mediaSession.setActionHandler('previoustrack', () => {
+          console.log('prev by media session');
+          prevRadio()
+        });
+        navigator.mediaSession.setActionHandler('nexttrack', () => {
+          console.log('next by media session');
+          nextRadio()
+        });
+        navigator.mediaSession.setActionHandler('pause', () => {
+          console.log('paused by media session');
+          player.pause()
+        });
+        navigator.mediaSession.setActionHandler('play', () => {
+          console.log('played by media session');
+          player.pause();
+          player.src = radioSelect.value;
+          player.play();
+        });
       }
 
       // update poster image
