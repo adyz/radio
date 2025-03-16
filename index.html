@@ -169,6 +169,8 @@
     let hasError = false;
     let isLoading = false;
 
+    let lastPauseTime = null;
+
     function cloudinaryImageUrl(text) {
       return `https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,c_fit,l_text:arial_90:${text}/nndti4oybhdzggf8epvh`;
     }
@@ -194,11 +196,23 @@
         });
         navigator.mediaSession.setActionHandler('pause', () => {
           console.log('paused by media session');
+          lastPauseTime = performance.now();
           player.pause()
         });
         navigator.mediaSession.setActionHandler('play', () => {
           console.log('played by media session');
-          player.play()
+          
+          if(lastPauseTime && performance.now() - lastPauseTime > 2000){
+            console.log('Restart radio after pause by media session because of long pause');
+            player.pause();
+            player.src = '';
+            playRadio(radioSelect.selectedIndex);
+          } else {
+            player.play()
+          }
+
+          lastPauseTime = null;
+
         });
       }
 
@@ -375,9 +389,8 @@
     });
 
 
-    let lastPauseTime = null;
-
     player.addEventListener('play', (e) => {
+      console.log('play event was triggered');
       playButton.classList.add('hidden');
       pauseButton.classList.remove('hidden');
       const now = performance.now();
