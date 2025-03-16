@@ -370,7 +370,14 @@
         if (radioSelect.selectedIndex === 0) {
           playRadio(1);
         } else {
-          player.play();
+          console.log('try to resume', {player, playerSrc: player.src});
+          // if player src is same as window src, call playRadio
+          if (player.src === window.location.href) {
+            const selectedIndex = radioSelect.selectedIndex;
+            playRadio(selectedIndex);
+          } else {
+            player.play();
+          }
         }
       }
     });
