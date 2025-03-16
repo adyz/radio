@@ -198,9 +198,7 @@
         });
         navigator.mediaSession.setActionHandler('play', () => {
           console.log('played by media session');
-          player.pause();
-          player.src = radioSelect.value;
-          player.play();
+          player.play()
         });
       }
 
