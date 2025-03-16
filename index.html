@@ -271,9 +271,7 @@
       loadingMsg.classList.remove('invisible');
       errorMsg.classList.add('invisible');
 
-      player.pause();
       player.src = radioSelect.value;
-      player.load();
 
       player.play().then(() => {
         isLoading = false;
@@ -401,6 +399,7 @@
       pauseButton.classList.add('hidden');
       lastPauseTime = performance.now();
     });
+    
 
     // prev and next buttons
     prevButton.addEventListener('click', prevRadio);
