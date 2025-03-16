@@ -68,7 +68,7 @@
       <!-- PlayerControls -->
       <!-- Button with move down a bit on press-->
 
-      <div class="flex items-center justify-center mt-20 relative z-10">
+      <div class="flex items-center justify-center mt-20 mb-10 relative z-10">
         <button id="prevButton" class="stroke-Red hover:stroke-Brown w-1/3 flex justify-center active:translate-y-1 active:stroke-Brown">
           <svg class="h-20 max-w-[20%]" viewBox="0 0 65 107" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M61.8923 103.771L3 53.4709" stroke-width="6" stroke-linecap="round" />
@@ -101,9 +101,9 @@
 
 
 
-      <div class="h-10">
-        <div id="loadingMsg" class="text-Brown text-center p-2 invisible ">Se încarcă...</div>
-        <div id="errorMsg" class="text-Red text-center p-2 invisible">Eroare la încărcarea postului radio.</div>
+      <div class="absolute z-10 bottom-10 w-full text-center text-sm">
+        <div id="loadingMsg" class="text-Brown absolute top-0 w-full text-center invisible">Se încarcă...</div>
+        <div id="errorMsg" class="text-Red absolute top-0 w-full text-center invisible">Eroare la încărcarea postului radio.</div>
       </div>
 
     </div>
@@ -268,9 +268,6 @@
 
       loadingMsg.classList.remove('invisible');
       errorMsg.classList.add('invisible');
-
-
-
 
       player.src = radioSelect.value;
 
