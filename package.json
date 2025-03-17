@@ -6,7 +6,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "node build.mjs",
     "start": "http-server \"dist\" --port=3000",
-    "watch": "live-server \"src\" --port=3210"
+    "watch": "live-server \"src\" --port=3210",
+    "vercel-build": "npm run build"
   },
   "author": "",
   "license": "ISC",
