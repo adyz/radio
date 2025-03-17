@@ -4,6 +4,7 @@ import { fileURLToPath } from "url";
 import { minify } from "html-minifier-terser";
 import { exec } from "child_process";
 import { promisify } from "util";
+import fs from "fs-extra";
 
 const execPromise = promisify(exec);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -58,9 +59,9 @@ async function minifyJS() {
 
 async function copyAssets() {
     try {
-        await execPromise(`npx cpx "${srcFolder}/images/**/*" "${distFolder}/images"`);
-        await execPromise(`npx cpx "${srcFolder}/sounds/**/*" "${distFolder}/sounds"`);
-        await execPromise(`npx cpx "${srcFolder}/manifest.json" "${distFolder}"`);
+        await fs.copy(path.join(srcFolder, "images"), path.join(distFolder, "images"));
+        await fs.copy(path.join(srcFolder, "sounds"), path.join(distFolder, "sounds"));
+        await fs.copy(path.join(srcFolder, "manifest.json"), path.join(distFolder, "manifest.json"));
         console.log("✅ Copied images, sounds, and manifest.json");
     } catch (error) {
         console.error("❌ Error copying assets:", error);
