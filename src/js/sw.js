@@ -1,2 +1,2 @@
 self.addEventListener("fetch", () => {});
-console.log('I am the service worker');
+console.log('I am the service worker!!!');
