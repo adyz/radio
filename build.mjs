@@ -1,10 +1,9 @@
-import fs from "fs/promises";
+import fs from "fs-extra";
 import path from "path";
 import { fileURLToPath } from "url";
 import { minify } from "html-minifier-terser";
 import { exec } from "child_process";
 import { promisify } from "util";
-import fs from "fs-extra";
 
 const execPromise = promisify(exec);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
