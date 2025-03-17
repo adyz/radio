@@ -1,1 +1,0 @@
-setInterval((()=>{postMessage("keep-alive")}),5e3);

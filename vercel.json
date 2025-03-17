@@ -1,5 +1,5 @@
 {
   "routes": [
-    { "src": "/(.*)", "dest": "/dist/$1" }
+    { "src": "/(.*)", "dest": "/public/$1" }
   ]
 }

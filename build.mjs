@@ -9,7 +9,7 @@ const execPromise = promisify(exec);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const srcFolder = path.join(__dirname, "src");
-const distFolder = path.join(__dirname, "dist");
+const distFolder = path.join(__dirname, "public");
 
 async function minifyHTML() {
     const htmlPath = path.join(srcFolder, "index.html");
