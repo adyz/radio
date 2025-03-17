@@ -270,3 +270,23 @@ if ('serviceWorker' in navigator) {
     .then(reg => console.log('Service Worker registered!'))
     .catch(err => console.error('Service Worker registration failed:', err));
 }
+
+
+function updateThemeColor() {
+  const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const themeColor = isDarkMode ? '#434238' : '#fffdef'; // Negru pentru dark mode, alb pentru light mode
+
+  let metaThemeColor = document.querySelector('meta[name="theme-color"]');
+  if (!metaThemeColor) {
+      metaThemeColor = document.createElement('meta');
+      metaThemeColor.setAttribute('name', 'theme-color');
+      document.head.appendChild(metaThemeColor);
+  }
+  metaThemeColor.setAttribute('content', themeColor);
+}
+
+// Inițializăm la încărcarea paginii
+updateThemeColor();
+
+// Ascultăm schimbările în preferințele sistemului
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeColor);
