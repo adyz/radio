@@ -78,31 +78,31 @@ function audioInstance(htmlElement) {
   instance.src = initialSrc;
 
   instance.play = () => {
-    // if (!isPlaying) {
-    //   console.log('Play audio', { htmlSrc: htmlElement.src, instanceSrc: instance.src });
-    //   htmlElement.src = instance.src;
-    //   isPlaying = true;
-    //   htmlElement.play().catch((error) => {
-    //     if (error.name !== 'AbortError') {
-    //       console.error('Error playing audio:', error);
-    //     }
-    //     isPlaying = false;
-    //   });
+    if (!isPlaying) {
+      console.log('Play audio', { htmlSrc: htmlElement.src, instanceSrc: instance.src });
+      htmlElement.src = instance.src;
+      isPlaying = true;
+      htmlElement.play().catch((error) => {
+        if (error.name !== 'AbortError') {
+          console.error('Error playing audio:', error);
+        }
+        isPlaying = false;
+      });
 
-    //   // lower volume for loading and error noises
-    //   if (htmlElement === loadingNoise || htmlElement === errorNoise) {
-    //     htmlElement.volume = 0.3;
-    //   }
-    // }
+      // lower volume for loading and error noises
+      if (htmlElement === loadingNoise || htmlElement === errorNoise) {
+        htmlElement.volume = 0.3;
+      }
+    }
   };
 
   instance.stop = () => {
-    // if (isPlaying) {
-    //   console.log('Stop audio', { htmlSrc: htmlElement.src, instanceSrc: instance.src });
-    //   htmlElement.pause();
-    //   htmlElement.src = '';
-    //   isPlaying = false;
-    // }
+    if (isPlaying) {
+      console.log('Stop audio', { htmlSrc: htmlElement.src, instanceSrc: instance.src });
+      htmlElement.pause();
+      htmlElement.src = '';
+      isPlaying = false;
+    }
   };
 
   return instance;
