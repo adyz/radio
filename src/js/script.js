@@ -335,7 +335,7 @@ radios.forEach((radio, index) => {
 });
 
 // on click open the new selector
-new_selector_open_button.addEventListener('click', () => {
+[new_selector_open_button, posterImage].map(el => el.addEventListener('click', () => {
   new_selector_content.classList.toggle('hidden');
 
   //  loop to find the new selected radio and add the selected class
@@ -349,11 +349,12 @@ new_selector_open_button.addEventListener('click', () => {
     }
   });
 }
-);
+));
+
 
 // on click anywhere outside the new selector, close it
 document.addEventListener('click', (e) => {
-  if (!new_selector_content.contains(e.target) && !new_selector_open_button.contains(e.target)) {
+  if (!new_selector_content.contains(e.target) && !new_selector_open_button.contains(e.target) && !posterImage.contains(e.target)) {
     new_selector_content.classList.add('hidden');
   }
 });
