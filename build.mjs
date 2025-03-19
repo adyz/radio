@@ -70,7 +70,7 @@ async function copyAssets() {
 
 async function buildCSS() {
     try {
-        await execPromise(`npx tailwindcss -i ./src/css/input.css -o ./src/css/output.css`);
+        await execPromise(`npx tailwindcss -i ./src/css/input.css -o ./src/css/output.css --minify`);
         console.log("✅ Built CSS");
     } catch (error) {
         console.error("❌ Error building CSS:", error);
