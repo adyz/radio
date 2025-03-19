@@ -41,6 +41,8 @@
         --color-LogoLeg: #216155;
         --color-LogoWing: #74CCA2;
         --color-Logo: #3a3a30;
+
+        --color-StaticWhite: #fffdef;
       }
 
     @media (prefers-color-scheme: dark) {
@@ -58,6 +60,8 @@
           --color-LogoLeg: #216155;
           --color-LogoWing: #74CCA2;
           --color-Logo: #F5EFB9;
+
+          --color-StaticWhite: #fffdef;
         }
     }
 
@@ -66,7 +70,7 @@
 </head>
 
 <body class="bg-Bg p-4 flex flex-col justify-center items-center">
-  <div class="text-center flex justify-center flex-col relative z-10">
+  <div id="logo" class="text-center flex justify-center flex-col relative z-10">
     <svg class="h-20 fill-Logo mt-2" version="1.0" xmlns="http://www.w3.org/2000/svg"
       viewBox="0 0 970.000000 979.000000" preserveAspectRatio="xMidYMid meet">
 
@@ -103,17 +107,46 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
 
     </h1>
   </div>
-  
+
   <div
     class="rounded-3xl shadow-xl w-full max-w-[540px] bg-gradient-to-t from-White to-bg text-white min-h-[calc(100dvh-180px)] flex flex-col align-center justify-end relative">
+
+    <!-- Gradient overlay -->
     <div class="absolute top-0 left-0 w-[104%] h-[100%] -m-[2%] bg-gradient-to-b from-Bg to-transparent"></div>
-    <div class="">
+
+
+    <div>
+
+      <!-- New radio selector -->
+
+      <div id="new_selector__parent" class="relative z-20 top-0 left-[11%] w-[78%] h-full">
+
+
+        <button
+          class="position absolute top-22 right-[50%] -mr-19 text-SuperLighterBrown bg-StaticWhite border-[.5px] boder-Broder py-2 rounded-lg scale-75"
+        id="new_selector__button">
+        <svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" shape-rendering="geometricPrecision" viewBox="0 0 24 24" height="24" width="24" style="color: currentcolor;"><path d="M17 8.517L12 3 7 8.517m0 6.963l5 5.517 5-5.517"></path></svg>
+      </button>
+
+        <!-- this will be cloned inside -->
+        <button id="new_selector__button_example" class="hidden w-full text-Brown py-4 text-md hover:bg-Red/20 active:bg-Red/20 border-0 border-b border-Border/50">Example</button>
+
+        <div id="new_selector__content"
+          class="hidden flex overflow-auto flex-col absolute top-0 left-0 w-full h-82 shadow-2xl border border-Border bg-White overscroll-contain rounded-3xl">
+          
+          
+          
+        </div>
+      </div>
+
       <!-- Poster Image -->
       <div id="posterImage"
         class="mx-auto rounded-3xl overflow-hidden w-[128px] h-[128px] bg-Red border border-Border relative z-10 mt-10">
-        <img src="https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:Coji%20Radio%20Player/nndti4oybhdzggf8epvh"
-          alt="Coji Radio Player"
-          class="w-full h-full object-cover">
+
+
+        <img
+          src="https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:Coji%20Radio%20Player/nndti4oybhdzggf8epvh"
+          alt="Coji Radio Player" class="w-full h-full object-cover">
       </div>
 
 
@@ -178,11 +211,11 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
     <source src="./sounds/error.mp3" type="audio/mpeg">
   </audio>
 
-  <select id="radioSelect" class="border rounded-lg border-Border p-2 m-8 w-[70%] text-sm max-w-[540px] text-center text-Red">
-    <option value="">Alege un post radio</option>
+  <select id="radioSelect"
+    class="hidden border rounded-lg border-Border p-2 m-8 w-[70%] text-sm max-w-[540px] text-center text-Red">
     <option value="https://live.kissfm.ro/kissfm.aacp">Kiss FM</option>
     <option value="https://astreaming.europafm.ro:8443/europafm_aacp48k">Europa FM</option>
-    <option value="https://live3ro.antenaplay.ro/radiozu/12050/seg48000-24099999.aac">Radio ZU</option>
+    <option value="https://live7digi.antenaplay.ro/radiozu/radiozu-48000.m3u8">Radio ZU</option>
     <option value="https://edge76.rcs-rds.ro/digifm/digifm.mp3?111">Digi FM</option>
     <option value="https://live.magicfm.ro/magicfm.aacp">Magic FM</option>
     <option value="https://astreaming.virginradio.ro:8443/virgin_aacp_64k">Virgin Radio România</option>
@@ -192,7 +225,7 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
     <option value="https://live.guerrillaradio.ro:8443/guerrilla.aac">Radio Guerrilla</option>
     <option value="https://asculta.nationalfm.ro:9102/nfm2">National FM</option>
     <option value="https://edge126.rcs-rds.ro/profm/dancefm.mp3?1741969012508">Dance FM</option>
-    <option value="https://astreaming.vibefm.ro:8443/vibefm_aacp64k">Vibe FM</option>
+    <option value="https://live.radiovibefm.eu/8052/stream">Vibe FM</option>
     <option value="https://stream4.srr.ro:8443/romania-cultural">Radio România Cultural</option>
     <option value="https://stream4.srr.ro:8443/romania-muzical">Radio România Muzical</option>
   </select>
