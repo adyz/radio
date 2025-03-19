@@ -6,16 +6,21 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "build": "node build.mjs",
     "start": "http-server \"public\" --port=3000",
+    "vercel-build": "npm run build",
+    "tailwind": "npx tailwindcss -i ./src/css/input.css -o ./src/css/output.css --watch",
     "watch": "live-server \"src\" --port=3210",
-    "vercel-build": "npm run build"
+    "dev": "concurrently \"npm run watch\" \"npm run devTailwind\""
   },
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "http-server": "^14.1.1"
+    "@tailwindcss/cli": "^4.0.14",
+    "http-server": "^14.1.1",
+    "tailwindcss": "^4.0.14"
   },
   "devDependencies": {
+    "concurrently": "^9.1.2",
     "cpx": "^1.5.0",
     "fs-extra": "^11.3.0",
     "html-minifier-terser": "^7.2.0",
