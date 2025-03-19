@@ -47,7 +47,7 @@ async function minifyJS() {
             if (file.endsWith(".js")) {
                 const inputFile = path.join(jsSrcFolder, file);
                 const outputFile = path.join(jsDistFolder, file);
-                await execPromise(`npx terser ${inputFile} -o ${outputFile} --compress --mangle --toplevel --output ${outputFile}`);
+                await execPromise(`npx terser ${inputFile} -o ${outputFile} --compress 'drop_console=true' --mangle --toplevel --output ${outputFile}`);
                 console.log(`✅ Minified & Obfuscated (Strong): ${file}`);
             }
         }
