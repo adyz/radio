@@ -46,14 +46,17 @@ const updateMediaSession = () => {
       console.log('next by media session');
       nextRadio()
     });
-    navigator.mediaSession.setActionHandler('pause', () => {
-      console.log('paused by media session');
-      player.pause()
-    });
-    navigator.mediaSession.setActionHandler('play', () => {
-      console.log('played by media session');
-      player.play();
-    });
+
+    if(!isLoading && !hasError) {
+      navigator.mediaSession.setActionHandler('pause', () => {
+        console.log('paused by media session');
+        player.pause()
+      });
+      navigator.mediaSession.setActionHandler('play', () => {
+        console.log('played by media session');
+        player.play();
+      });
+    }
   }
 
   // update poster image
@@ -119,6 +122,7 @@ const playRadio = (index) => {
 
   errorNoiseInstance.stop();
   loadingNoiseInstance.play();
+  [playButton, pauseButton].forEach(button => button.classList.add('opacity-50', 'cursor-not-allowed'));
 
   loadingMsg.classList.remove('invisible');
   errorMsg.classList.add('invisible');
@@ -132,6 +136,7 @@ const playRadio = (index) => {
     hasError = false;
     loadingMsg.classList.add('invisible');
     errorMsg.classList.add('invisible');
+    [playButton, pauseButton].forEach(button => button.classList.remove('opacity-50', 'cursor-not-allowed'));
 
     loadingNoiseInstance.stop();
 
@@ -149,6 +154,7 @@ const playRadio = (index) => {
 
     loadingMsg.classList.add('invisible');
     errorMsg.classList.remove('invisible');
+    [playButton, pauseButton].forEach(button => button.classList.remove('opacity-50', 'cursor-not-allowed'));
 
     loadingNoiseInstance.stop();
     errorNoiseInstance.play();
