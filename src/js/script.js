@@ -166,13 +166,13 @@ radioSelect.addEventListener('change', (e) => {
 });
 
 const prevRadio = () => {
-  console.log('prevRadio');
-  playRadio(radioSelect.selectedIndex > 1 ? radioSelect.selectedIndex - 1 : radioSelect.options.length - 1);
+  console.log('prevRadio', radioSelect.selectedIndex);
+  playRadio(radioSelect.selectedIndex === 0 ? radioSelect.options.length - 1 : radioSelect.selectedIndex - 1);
 };
 
 const nextRadio = () => {
-  console.log('nextRadio');
-  playRadio(radioSelect.selectedIndex < radioSelect.options.length - 1 ? radioSelect.selectedIndex + 1 : 1);
+  console.log('nextRadio', radioSelect.selectedIndex);  
+  playRadio(radioSelect.selectedIndex === radioSelect.options.length - 1 ? 0 : radioSelect.selectedIndex + 1);
 };
 
 if (window.electronAPI) {
@@ -218,7 +218,7 @@ if (window.electronAPI) {
 playButton.addEventListener('click', () => {
   if (player.paused) {
     if (radioSelect.selectedIndex === 0) {
-      playRadio(1);
+      playRadio(0);
     } else {
       player.play();
     }
@@ -290,3 +290,71 @@ updateThemeColor();
 
 // Ascultăm schimbările în preferințele sistemului
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeColor);
+
+
+// new selector
+const new_selector_open_button = document.getElementById('new_selector__button');
+const new_selector_content = document.getElementById('new_selector__content');
+const new_selector_button_example = document.getElementById('new_selector__button_example');
+
+
+// populate the new selector with the radios
+const radios = radioSelect.querySelectorAll('option');
+radios.forEach((radio, index) => {
+  // create a new button like the example that is in the dom
+  const new_button = new_selector_button_example.cloneNode(true);
+  new_button.id = '';
+  new_button.classList.remove('hidden');
+  new_button.innerText = radio.text;
+  
+  // play the radio on click
+  new_button.addEventListener('click', () => {
+    playRadio(index);
+    new_selector_content.classList.add('hidden');
+  });
+
+  // append the new button to the new selector
+  new_selector_content.appendChild(new_button);
+
+  // if it's selected, add the selected class
+  // this is by the radioSelect.selectedIndex
+  if (radioSelect.selectedIndex && radioSelect.selectedIndex === index) {
+    
+    new_button.classList.add('bg-Red');
+
+    // remove the selected class from previous selected
+    const previous_selected = new_selector_content.querySelector('.bg-Red');
+    
+    if (previous_selected) {
+      previous_selected.classList.remove('bg-Red');
+    }
+
+  }
+
+
+});
+
+// on click open the new selector
+new_selector_open_button.addEventListener('click', () => {
+  new_selector_content.classList.toggle('hidden');
+
+  //  loop to find the new selected radio and add the selected class
+  const new_selector_buttons = new_selector_content.querySelectorAll('button');
+  new_selector_buttons.forEach((button, index) => {
+    if (radioSelect.selectedIndex === index) {
+      button.classList.add('bg-Red');
+      button.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } else {
+      button.classList.remove('bg-Red');
+    }
+  });
+}
+);
+
+// on click anywhere outside the new selector, close it
+document.addEventListener('click', (e) => {
+  if (!new_selector_content.contains(e.target) && !new_selector_open_button.contains(e.target)) {
+    new_selector_content.classList.add('hidden');
+  }
+});
+
