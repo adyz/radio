@@ -9,7 +9,7 @@
     "vercel-build": "npm run build",
     "tailwind": "npx tailwindcss -i ./src/css/input.css -o ./src/css/output.css --watch",
     "watch": "live-server \"src\" --port=3210",
-    "dev": "concurrently \"npm run watch\" \"npm run devTailwind\""
+    "dev": "concurrently \"npm run watch\" \"npm run tailwind\""
   },
   "author": "",
   "license": "ISC",
