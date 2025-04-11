@@ -91,7 +91,7 @@ function audioInstance(htmlElement) {
 
       // lower volume for loading and error noises
       if (htmlElement === loadingNoise || htmlElement === errorNoise) {
-        htmlElement.volume = 0.3;
+        htmlElement.volume = 0.15;
       }
     }
   };
