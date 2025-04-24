@@ -81,12 +81,6 @@ function audioInstance(htmlElement) {
     if (!isPlaying) {
       console.log('Play audio', { htmlSrc: htmlElement.src, instanceSrc: instance.src });
   
-      if (htmlElement === loadingNoise || htmlElement === errorNoise) {
-        htmlElement.volume = 0.15;
-      } else {
-        htmlElement.volume = 1.0; // default, just in case
-      }
-  
       htmlElement.src = instance.src;
       isPlaying = true;
   
