@@ -363,3 +363,86 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// === Google Analytics Events pentru radio ===
+(function() {
+  // Verifică dacă gtag e disponibil
+  function trackEvent(eventName, params = {}) {
+    if (typeof gtag === "function") {
+      gtag('event', eventName, params);
+    }
+  }
+
+  let currentStation = null;
+  let playStartTime = null;
+
+  function getStationName() {
+    const select = document.getElementById('radioSelect');
+    return select.options[select.selectedIndex]?.text || '';
+  }
+
+  // Play radio
+  player.addEventListener('play', () => {
+    const station = getStationName();
+    if (currentStation !== station) {
+      // Dacă s-a schimbat postul, trimite durata pentru cel anterior
+      if (playStartTime && currentStation) {
+        const duration = Math.round((Date.now() - playStartTime) / 1000);
+        trackEvent('radio_listen_duration', {
+          station: currentStation,
+          duration_seconds: duration
+        });
+      }
+      trackEvent('radio_play', { station });
+      currentStation = station;
+      playStartTime = Date.now();
+    } else if (!playStartTime) {
+      // Prima pornire
+      trackEvent('radio_play', { station });
+      playStartTime = Date.now();
+    }
+  });
+
+  // Schimbare post radio
+  radioSelect.addEventListener('change', () => {
+    const station = getStationName();
+    if (playStartTime && currentStation) {
+      const duration = Math.round((Date.now() - playStartTime) / 1000);
+      trackEvent('radio_listen_duration', {
+        station: currentStation,
+        duration_seconds: duration
+      });
+    }
+    trackEvent('radio_change', { station });
+    currentStation = station;
+    playStartTime = Date.now();
+  });
+
+  // Butoane next/prev
+  prevButton.addEventListener('click', () => {
+    trackEvent('radio_prev', { station: getStationName() });
+  });
+  nextButton.addEventListener('click', () => {
+    trackEvent('radio_next', { station: getStationName() });
+  });
+
+  // Eroare la player
+  player.addEventListener('error', (e) => {
+    trackEvent('radio_error', {
+      station: getStationName(),
+      error_code: e.target.error ? e.target.error.code : 'unknown'
+    });
+  });
+
+  // La închiderea paginii, trimite durata ascultării
+  window.addEventListener('beforeunload', () => {
+    if (playStartTime && currentStation) {
+      const duration = Math.round((Date.now() - playStartTime) / 1000);
+      trackEvent('radio_listen_duration', {
+        station: currentStation,
+        duration_seconds: duration
+      });
+    }
+  });
+})();
+// === Sfârșit Google Analytics Events ===
+
