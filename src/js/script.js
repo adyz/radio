@@ -367,6 +367,7 @@ document.addEventListener('click', (e) => {
 (function() {
   // Verifică dacă gtag e disponibil
   function trackEvent(eventName, params = {}) {
+    console.log('GA event:', eventName, params);
     if (typeof gtag === "function") {
       gtag('event', eventName, params);
     }
