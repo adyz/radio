@@ -1,7 +1,12 @@
 /**
  * Radio Metadata Service
  * Fetches currently playing song information from various Romanian radio stations
- * Uses multiple approaches: RadioBrowser API, Shoutcast metadata, and station-specific APIs
+ * 
+ * Note: Due to CORS restrictions, most radio station APIs cannot be accessed directly from the browser.
+ * This implementation provides multiple approaches:
+ * 1. Mock data for demonstration purposes
+ * 2. A framework for integrating with station-specific APIs when CORS is resolved
+ * 3. Instructions for setting up a backend proxy
  */
 
 class RadioMetadataService {
@@ -11,6 +16,7 @@ class RadioMetadataService {
     this.updateInterval = null;
     this.currentStation = null;
     this.onMetadataUpdate = null;
+    this.useMockData = true; // Set to false when real APIs are available
   }
 
   /**
@@ -56,10 +62,13 @@ class RadioMetadataService {
     }
 
     try {
-      // Try multiple approaches in order
-      let metadata = await this.tryRadioBrowser(stationName);
-      
-      if (!metadata || !metadata.song) {
+      let metadata = null;
+
+      if (this.useMockData) {
+        // Use mock data for demonstration
+        metadata = this.getMockMetadata(stationName);
+      } else {
+        // Try to fetch real metadata (requires CORS-enabled APIs or backend proxy)
         metadata = await this.tryStationSpecificAPI(stationName);
       }
 
@@ -83,61 +92,67 @@ class RadioMetadataService {
   }
 
   /**
-   * Try fetching metadata from RadioBrowser API
+   * Get mock metadata for demonstration
+   * This rotates through a list of popular Romanian songs
    */
-  async tryRadioBrowser(stationName) {
-    try {
-      // Map station names to search terms
-      const searchName = this.getRadioBrowserSearchName(stationName);
-      
-      const response = await fetch(
-        `https://de1.api.radio-browser.info/json/stations/byname/${encodeURIComponent(searchName)}`,
-        { timeout: 5000 }
-      );
+  getMockMetadata(stationName) {
+    const mockSongs = {
+      'Kiss FM': [
+        { song: 'Floare de colț', artist: 'Irina Rimes', album: 'Cosmos' },
+        { song: 'Despacito', artist: 'Luis Fonsi ft. Daddy Yankee', album: 'Vida' },
+        { song: 'Shape of You', artist: 'Ed Sheeran', album: '÷' },
+      ],
+      'Europa FM': [
+        { song: 'Bella', artist: 'Carla\'s Dreams', album: 'Antiherou' },
+        { song: 'Levitating', artist: 'Dua Lipa', album: 'Future Nostalgia' },
+        { song: 'Blinding Lights', artist: 'The Weeknd', album: 'After Hours' },
+      ],
+      'Magic FM': [
+        { song: 'Perfect', artist: 'Ed Sheeran', album: '÷' },
+        { song: 'Someone Like You', artist: 'Adele', album: '21' },
+        { song: 'Thinking Out Loud', artist: 'Ed Sheeran', album: 'x' },
+      ],
+      'ProFM': [
+        { song: 'Energie', artist: 'Smiley', album: 'Plec' },
+        { song: 'Stay', artist: 'The Kid LAROI & Justin Bieber', album: 'F*ck Love 3' },
+        { song: 'Heat Waves', artist: 'Glass Animals', album: 'Dreamland' },
+      ],
+      'Rock FM': [
+        { song: 'The Pretender', artist: 'Foo Fighters', album: 'Echoes, Silence, Patience & Grace' },
+        { song: 'Seven Nation Army', artist: 'The White Stripes', album: 'Elephant' },
+        { song: 'Smells Like Teen Spirit', artist: 'Nirvana', album: 'Nevermind' },
+      ],
+      'Virgin Radio România': [
+        { song: 'Uptown Funk', artist: 'Mark Ronson ft. Bruno Mars', album: 'Uptown Special' },
+        { song: 'Can\'t Stop the Feeling!', artist: 'Justin Timberlake', album: 'Trolls OST' },
+        { song: 'Happy', artist: 'Pharrell Williams', album: 'G I R L' },
+      ],
+      'Radio Guerrilla': [
+        { song: 'Există', artist: 'Subcarpați', album: 'Sunetul Speranței' },
+        { song: 'Praf de stele', artist: 'Voltaj', album: 'Live în Bucureşti' },
+        { song: 'Amintiri din copilărie', artist: 'Zdob și Zdub', album: 'Ethnomecanica' },
+      ],
+    };
 
-      if (!response.ok) throw new Error('RadioBrowser API failed');
+    const defaultSongs = [
+      { song: 'As It Was', artist: 'Harry Styles', album: 'Harry\'s House' },
+      { song: 'Anti-Hero', artist: 'Taylor Swift', album: 'Midnights' },
+      { song: 'Flowers', artist: 'Miley Cyrus', album: 'Endless Summer Vacation' },
+    ];
 
-      const stations = await response.json();
-      
-      // Find the best match
-      const station = stations.find(s => 
-        s.name.toLowerCase().includes(searchName.toLowerCase()) ||
-        searchName.toLowerCase().includes(s.name.toLowerCase())
-      );
-
-      if (station) {
-        // Fetch current playing info
-        const clickResponse = await fetch(
-          `https://de1.api.radio-browser.info/json/url/${station.stationuuid}`,
-          { timeout: 5000 }
-        );
-
-        if (clickResponse.ok) {
-          // RadioBrowser doesn't always have current song, but we can try to get it
-          // from the station's homepage or other metadata
-          return this.parseRadioBrowserMetadata(station);
-        }
-      }
-
-      return null;
-    } catch (error) {
-      console.log('RadioBrowser fetch failed:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Parse metadata from RadioBrowser station info
-   */
-  parseRadioBrowserMetadata(station) {
-    // RadioBrowser API has limited current-song info
-    // We can use homepage scraping or other methods
-    // For now, return null and rely on station-specific APIs
-    return null;
+    const songs = mockSongs[stationName] || defaultSongs;
+    const randomIndex = Math.floor(Math.random() * songs.length);
+    
+    return {
+      ...songs[randomIndex],
+      cover: null,
+      isMock: true // Flag to indicate this is mock data
+    };
   }
 
   /**
    * Try fetching metadata from station-specific APIs
+   * Note: These require CORS to be enabled or a backend proxy
    */
   async tryStationSpecificAPI(stationName) {
     const stationHandlers = {
@@ -164,10 +179,10 @@ class RadioMetadataService {
 
   /**
    * Fetch Kiss FM metadata
+   * Note: Requires CORS or backend proxy
    */
   async fetchKissFM() {
     try {
-      // Kiss FM provides an API endpoint for current song
       const response = await fetch('https://www.kissfm.ro/ajax/current_song.php', {
         mode: 'cors',
         timeout: 5000
@@ -185,7 +200,7 @@ class RadioMetadataService {
         }
       }
     } catch (error) {
-      console.log('Kiss FM API failed:', error);
+      console.log('Kiss FM API failed (likely CORS issue):', error);
     }
     return null;
   }
@@ -343,34 +358,6 @@ class RadioMetadataService {
       console.log('Guerrilla Radio API failed:', error);
     }
     return null;
-  }
-
-  /**
-   * Map station names to RadioBrowser search terms
-   */
-  getRadioBrowserSearchName(stationName) {
-    const mapping = {
-      'Kiss FM': 'Kiss FM Romania',
-      'Europa FM': 'Europa FM Romania',
-      'Digi FM': 'Digi FM',
-      'Magic FM': 'Magic FM Romania',
-      'Virgin Radio România': 'Virgin Radio Romania',
-      'Radio România Actualități': 'Radio Romania Actualitati',
-      'ProFM': 'Pro FM Romania',
-      'Rock FM': 'Rock FM Romania',
-      'Radio Guerrilla': 'Guerrilla Radio',
-      'National FM': 'National FM Romania',
-      'Dance FM': 'Dance FM Romania',
-      'Vibe FM': 'Vibe FM',
-      'Radio România Cultural': 'Radio Romania Cultural',
-      'Radio România Muzical': 'Radio Romania Muzical',
-      'Radio Pro-B România': 'Radio Pro-B',
-      'Vanilla Radio Deep': 'Vanilla Deep',
-      'Vanilla Radio Smooth': 'Vanilla Smooth',
-      'Vanilla Radio Fresh': 'Vanilla Fresh'
-    };
-
-    return mapping[stationName] || stationName;
   }
 
   /**
