@@ -1,6 +1,7 @@
 
 document.addEventListener("touchstart", function () { }, true);
 
+import RadioMetadataService from './radioMetadata.js';
 
 const radioSelect = document.getElementById('radioSelect');
 const player = document.getElementById('player');
@@ -15,6 +16,17 @@ const pauseButton = document.getElementById('pauseButton');
 const nextButton = document.getElementById('nextButton');
 
 const posterImage = document.getElementById('posterImage');
+
+// Song info elements
+const songInfo = document.getElementById('songInfo');
+const songInfoContent = document.getElementById('songInfoContent');
+const songTitle = document.getElementById('songTitle');
+const songArtist = document.getElementById('songArtist');
+const songInfoLoading = document.getElementById('songInfoLoading');
+const songInfoError = document.getElementById('songInfoError');
+
+// Initialize metadata service
+const metadataService = new RadioMetadataService();
 
 let hasError = false;
 let isLoading = false;
@@ -70,6 +82,39 @@ const updateMediaSession = () => {
   loadingMsg.innerText = isLoading ? `Se incarca ${title}...` : '';
 };
 
+/**
+ * Update song info UI
+ */
+function updateSongInfo(metadata) {
+  if (!metadata) {
+    // Hide all song info
+    songInfoContent.classList.add('invisible');
+    songInfoLoading.classList.add('invisible');
+    songInfoError.classList.add('invisible');
+    return;
+  }
+
+  if (metadata.song && metadata.artist) {
+    // Show song info
+    songTitle.textContent = metadata.song;
+    songArtist.textContent = metadata.artist;
+    songInfoContent.classList.remove('invisible');
+    songInfoLoading.classList.add('invisible');
+    songInfoError.classList.add('invisible');
+  } else if (metadata.error) {
+    // Show error message
+    songInfoContent.classList.add('invisible');
+    songInfoLoading.classList.add('invisible');
+    songInfoError.classList.remove('invisible');
+    songInfoError.textContent = metadata.error;
+  } else {
+    // Show loading
+    songInfoContent.classList.add('invisible');
+    songInfoLoading.classList.remove('invisible');
+    songInfoError.classList.add('invisible');
+  }
+}
+
 function audioInstance(htmlElement) {
   let initialSrc = htmlElement.querySelector('source').src;
   let isPlaying = false;
@@ -118,6 +163,10 @@ const playRadio = (index) => {
 
   updateMediaSession();
 
+  // Stop metadata polling while loading
+  metadataService.stopPolling();
+  updateSongInfo(null);
+
   errorNoiseInstance.stop();
   loadingNoiseInstance.play();
   [playButton, pauseButton].forEach(button => button.classList.add('opacity-50', 'cursor-not-allowed'));
@@ -139,6 +188,12 @@ const playRadio = (index) => {
     loadingNoiseInstance.stop();
 
     updateMediaSession();
+
+    // Start fetching metadata for the current station
+    const stationName = radioSelect.options[radioSelect.selectedIndex].text;
+    songInfoLoading.classList.remove('invisible');
+    metadataService.startPolling(stationName, updateSongInfo);
+
   }).catch(error => {
 
     if (error.name === 'AbortError') {
@@ -157,6 +212,10 @@ const playRadio = (index) => {
     loadingNoiseInstance.stop();
     errorNoiseInstance.play();
     updateMediaSession();
+
+    // Stop metadata polling on error
+    metadataService.stopPolling();
+    updateSongInfo(null);
   });
 };
 
@@ -256,6 +315,9 @@ player.addEventListener('pause', () => {
   playButton.classList.remove('hidden');
   pauseButton.classList.add('hidden');
   lastPauseTime = performance.now();
+  
+  // Stop metadata polling when paused
+  metadataService.stopPolling();
 });
 
 
