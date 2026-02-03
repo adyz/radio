@@ -84,7 +84,7 @@ class RadioMetadataService {
       // Try to fetch REAL metadata from our Vercel API endpoint
       const response = await this.fetchWithTimeout(
         `/api/metadata?station=${encodeURIComponent(stationName)}`,
-        8000 // 8 second timeout for API call
+        5000 // 5 second timeout for API call (API itself has 5s timeout)
       );
 
       if (response.ok) {

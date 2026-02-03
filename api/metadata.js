@@ -57,60 +57,70 @@ export default async function handler(req, res) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
 
-    const response = await fetch(streamUrl, {
-      method: 'HEAD', // Use HEAD to avoid downloading the stream
-      headers: {
-        'Icy-Metadata': '1',
-        'User-Agent': 'RadioPlayer/1.0'
-      },
-      signal: controller.signal
-    });
+    try {
+      const response = await fetch(streamUrl, {
+        method: 'HEAD', // Use HEAD to avoid downloading the stream
+        headers: {
+          'Icy-Metadata': '1',
+          'User-Agent': 'RadioPlayer/1.0'
+        },
+        signal: controller.signal
+      });
 
-    clearTimeout(timeout);
+      clearTimeout(timeout);
 
-    // Try to extract metadata from various headers
-    const icyName = response.headers.get('icy-name');
-    const icyDescription = response.headers.get('icy-description');
-    const icyGenre = response.headers.get('icy-genre');
+      // Try to extract metadata from various headers
+      const icyName = response.headers.get('icy-name');
+      const icyDescription = response.headers.get('icy-description');
+      const icyGenre = response.headers.get('icy-genre');
+      
+      // Note: icy-title is typically only available in the stream body, not HEAD response
+      // We'll need to parse it from the stream or use alternative methods
+      
+      // For now, let's try a GET request with range to get minimal data
+      // Create a new AbortController for the second fetch
+      const streamController = new AbortController();
+      const streamTimeout = setTimeout(() => streamController.abort(), 5000);
+      
+      try {
+        const streamResponse = await fetch(streamUrl, {
+          method: 'GET',
+          headers: {
+            'Icy-Metadata': '1',
+            'Range': 'bytes=0-16384', // Get first 16KB
+            'User-Agent': 'RadioPlayer/1.0'
+          },
+          signal: streamController.signal
+        });
+
+        clearTimeout(streamTimeout);
+
+        // Parse metadata interval
+        const metaint = parseInt(streamResponse.headers.get('icy-metaint') || '0');
     
-    // Note: icy-title is typically only available in the stream body, not HEAD response
-    // We'll need to parse it from the stream or use alternative methods
-    
-    // For now, let's try a GET request with range to get minimal data
-    const streamResponse = await fetch(streamUrl, {
-      method: 'GET',
-      headers: {
-        'Icy-Metadata': '1',
-        'Range': 'bytes=0-16384', // Get first 16KB
-        'User-Agent': 'RadioPlayer/1.0'
-      },
-      signal: controller.signal
-    });
+        if (metaint > 0 && streamResponse.body) {
+          // Read the stream to get metadata
+          const reader = streamResponse.body.getReader();
+          let bytesRead = 0;
+          let audioData = new Uint8Array(0);
 
-    // Parse metadata interval
-    const metaint = parseInt(streamResponse.headers.get('icy-metaint') || '0');
-    
-    if (metaint > 0 && streamResponse.body) {
-      // Read the stream to get metadata
-      const reader = streamResponse.body.getReader();
-      let bytesRead = 0;
-      let audioData = new Uint8Array(0);
+          while (bytesRead < metaint + 4096) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-      while (bytesRead < metaint + 4096) {
-        const { done, value } = await reader.read();
-        if (done) break;
+            const newData = new Uint8Array(audioData.length + value.length);
+            newData.set(audioData);
+            newData.set(value, audioData.length);
+            audioData = newData;
+            bytesRead += value.length;
 
-        const newData = new Uint8Array(audioData.length + value.length);
-        newData.set(audioData);
-        newData.set(value, audioData.length);
-        audioData = newData;
-        bytesRead += value.length;
-
-        // Check if we have enough data to read metadata
-        if (bytesRead >= metaint) {
-          // Skip audio data
-          const metadataLengthByte = audioData[metaint];
-          const metadataLength = metadataLengthByte * 16;
+            // Check if we have enough data to read metadata
+            if (bytesRead >= metaint) {
+              // Skip audio data, next byte is metadata length
+              const metadataLengthByte = audioData[metaint];
+              // Per Shoutcast protocol: metadata length is in 16-byte blocks
+              // So multiply by 16 to get actual byte length
+              const metadataLength = metadataLengthByte * 16;
 
           if (metadataLength > 0 && audioData.length >= metaint + 1 + metadataLength) {
             // Extract metadata
@@ -142,27 +152,38 @@ export default async function handler(req, res) {
                 }
               });
             }
+              }
+            }
           }
         }
+
+        reader.cancel();
       }
 
-      reader.cancel();
-    }
+      // If we couldn't extract metadata, return station info
+      return res.status(200).json({
+        success: true,
+        station: station,
+        song: null,
+        artist: null,
+        streamTitle: null,
+        metadata: {
+          name: icyName,
+          description: icyDescription,
+          genre: icyGenre
+        },
+        message: 'Metadata extraction not available for this station'
+      });
+      
+      } catch (streamError) {
+        clearTimeout(streamTimeout);
+        throw streamError;
+      }
 
-    // If we couldn't extract metadata, return station info
-    return res.status(200).json({
-      success: true,
-      station: station,
-      song: null,
-      artist: null,
-      streamTitle: null,
-      metadata: {
-        name: icyName,
-        description: icyDescription,
-        genre: icyGenre
-      },
-      message: 'Metadata extraction not available for this station'
-    });
+    } catch (headError) {
+      clearTimeout(timeout);
+      throw headError;
+    }
 
   } catch (error) {
     console.error('Error fetching metadata:', error);
