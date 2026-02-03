@@ -16,7 +16,8 @@ class RadioMetadataService {
     this.updateInterval = null;
     this.currentStation = null;
     this.onMetadataUpdate = null;
-    this.useMockData = true; // Set to false when real APIs are available
+    // Note: Only mock data is used to avoid CORS issues
+    // For real API integration, see RADIO_METADATA_README.md
   }
 
   /**
@@ -84,15 +85,9 @@ class RadioMetadataService {
     }
 
     try {
-      let metadata = null;
-
-      if (this.useMockData) {
-        // Use mock data for demonstration
-        metadata = this.getMockMetadata(stationName);
-      } else {
-        // Try to fetch real metadata (requires CORS-enabled APIs or backend proxy)
-        metadata = await this.tryStationSpecificAPI(stationName);
-      }
+      // ALWAYS use mock data to avoid CORS issues with station APIs
+      // For real API integration, see RADIO_METADATA_README.md
+      const metadata = this.getMockMetadata(stationName);
 
       if (metadata && metadata.song) {
         this.saveToCache(stationName, metadata);
