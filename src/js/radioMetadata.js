@@ -20,6 +20,28 @@ class RadioMetadataService {
   }
 
   /**
+   * Fetch with timeout
+   * @param {string} url - URL to fetch
+   * @param {number} timeoutMs - Timeout in milliseconds
+   */
+  async fetchWithTimeout(url, timeoutMs = 5000) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        mode: 'cors'
+      });
+      clearTimeout(timeout);
+      return response;
+    } catch (error) {
+      clearTimeout(timeout);
+      throw error;
+    }
+  }
+
+  /**
    * Start polling for metadata updates
    * @param {string} stationName - Name of the radio station
    * @param {Function} callback - Callback function to handle metadata updates
@@ -183,10 +205,7 @@ class RadioMetadataService {
    */
   async fetchKissFM() {
     try {
-      const response = await fetch('https://www.kissfm.ro/ajax/current_song.php', {
-        mode: 'cors',
-        timeout: 5000
-      });
+      const response = await this.fetchWithTimeout('https://www.kissfm.ro/ajax/current_song.php');
 
       if (response.ok) {
         const data = await response.json();
@@ -210,10 +229,7 @@ class RadioMetadataService {
    */
   async fetchEuropaFM() {
     try {
-      const response = await fetch('https://www.europafm.ro/artist-album-ajax/', {
-        mode: 'cors',
-        timeout: 5000
-      });
+      const response = await this.fetchWithTimeout('https://www.europafm.ro/artist-album-ajax/');
 
       if (response.ok) {
         const data = await response.json();
@@ -236,10 +252,7 @@ class RadioMetadataService {
    */
   async fetchMagicFM() {
     try {
-      const response = await fetch('https://www.magicfm.ro/wp-json/songtitle/v1/get', {
-        mode: 'cors',
-        timeout: 5000
-      });
+      const response = await this.fetchWithTimeout('https://www.magicfm.ro/wp-json/songtitle/v1/get');
 
       if (response.ok) {
         const data = await response.json();
@@ -262,10 +275,7 @@ class RadioMetadataService {
    */
   async fetchProFM() {
     try {
-      const response = await fetch('https://www.profm.ro/ajax/current-song', {
-        mode: 'cors',
-        timeout: 5000
-      });
+      const response = await this.fetchWithTimeout('https://www.profm.ro/ajax/current-song');
 
       if (response.ok) {
         const data = await response.json();
@@ -288,10 +298,7 @@ class RadioMetadataService {
    */
   async fetchRockFM() {
     try {
-      const response = await fetch('https://www.rockfm.ro/api/now-playing', {
-        mode: 'cors',
-        timeout: 5000
-      });
+      const response = await this.fetchWithTimeout('https://www.rockfm.ro/api/now-playing');
 
       if (response.ok) {
         const data = await response.json();
@@ -314,10 +321,7 @@ class RadioMetadataService {
    */
   async fetchVirginRadio() {
     try {
-      const response = await fetch('https://www.virginradio.ro/api/now-playing', {
-        mode: 'cors',
-        timeout: 5000
-      });
+      const response = await this.fetchWithTimeout('https://www.virginradio.ro/api/now-playing');
 
       if (response.ok) {
         const data = await response.json();
@@ -340,10 +344,7 @@ class RadioMetadataService {
    */
   async fetchGuerrillaRadio() {
     try {
-      const response = await fetch('https://www.guerrillaradio.ro/api/current-song', {
-        mode: 'cors',
-        timeout: 5000
-      });
+      const response = await this.fetchWithTimeout('https://www.guerrillaradio.ro/api/current-song');
 
       if (response.ok) {
         const data = await response.json();
