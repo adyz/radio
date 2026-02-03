@@ -2,11 +2,8 @@
  * Radio Metadata Service
  * Fetches currently playing song information from various Romanian radio stations
  * 
- * Note: Due to CORS restrictions, most radio station APIs cannot be accessed directly from the browser.
- * This implementation provides multiple approaches:
- * 1. Mock data for demonstration purposes
- * 2. A framework for integrating with station-specific APIs when CORS is resolved
- * 3. Instructions for setting up a backend proxy
+ * Now uses REAL metadata from Shoutcast/Icecast streams via Vercel serverless function
+ * Falls back to mock data if real API is unavailable
  */
 
 class RadioMetadataService {
@@ -16,8 +13,7 @@ class RadioMetadataService {
     this.updateInterval = null;
     this.currentStation = null;
     this.onMetadataUpdate = null;
-    // Note: Only mock data is used to avoid CORS issues
-    // For real API integration, see RADIO_METADATA_README.md
+    // Using real API at /api/metadata with fallback to mock data
   }
 
   /**
@@ -85,26 +81,45 @@ class RadioMetadataService {
     }
 
     try {
-      // ALWAYS use mock data to avoid CORS issues with station APIs
-      // For real API integration, see RADIO_METADATA_README.md
-      const metadata = this.getMockMetadata(stationName);
+      // Try to fetch REAL metadata from our Vercel API endpoint
+      const response = await this.fetchWithTimeout(
+        `/api/metadata?station=${encodeURIComponent(stationName)}`,
+        8000 // 8 second timeout for API call
+      );
 
-      if (metadata && metadata.song) {
-        this.saveToCache(stationName, metadata);
-        this.notifyUpdate(metadata);
-        return metadata;
+      if (response.ok) {
+        const data = await response.json();
+        
+        if (data.success && data.song && data.artist) {
+          // We got real metadata!
+          const metadata = {
+            song: data.song,
+            artist: data.artist,
+            streamTitle: data.streamTitle,
+            source: 'real-api'
+          };
+          
+          this.saveToCache(stationName, metadata);
+          this.notifyUpdate(metadata);
+          return metadata;
+        }
       }
 
-      // Return no metadata available
-      const noMetadata = { song: null, artist: null, error: 'Nu sunt disponibile informații despre melodia curentă' };
-      this.notifyUpdate(noMetadata);
-      return noMetadata;
+      // If API fails or returns no data, fall back to mock data
+      console.log('Real API returned no data, using mock data as fallback');
+      const mockMetadata = this.getMockMetadata(stationName);
+      this.saveToCache(stationName, mockMetadata);
+      this.notifyUpdate(mockMetadata);
+      return mockMetadata;
 
     } catch (error) {
-      console.error('Error fetching metadata:', error);
-      const errorMetadata = { song: null, artist: null, error: 'Eroare la obținerea informațiilor' };
-      this.notifyUpdate(errorMetadata);
-      return errorMetadata;
+      console.error('Error fetching real metadata, falling back to mock:', error);
+      
+      // Fallback to mock data on error
+      const mockMetadata = this.getMockMetadata(stationName);
+      this.saveToCache(stationName, mockMetadata);
+      this.notifyUpdate(mockMetadata);
+      return mockMetadata;
     }
   }
 
