@@ -90,7 +90,7 @@ export function App() {
     }
 
     // Update document title
-    document.title = `${isLoading ? "⏳" : ''} ${hasError ? '❤️‍🩹' : ''} ${!isLoading && !hasError ? '🔴' : ''} ${isLoading ? `Se incarca ${title}` : hasError ? 'Eroare' : title}`;
+    document.title = `${isLoading ? "⏳" : ''} ${hasError ? '❤️‍🩹' : ''} ${!isLoading && !hasError ? '🔴' : ''} ${isLoading ? `Se încarcă ${title}` : hasError ? 'Eroare' : title}`;
   }, [selectedIndex, isLoading, hasError]);
 
   // Electron API integration
@@ -300,7 +300,7 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
             <button
               id="new_selector__button"
               onClick={handleSelectorToggle}
-              className="position absolute top-22 right-[50%] -mr-19 text-SuperLighterBrown bg-StaticWhite border-[.5px] boder-Broder py-2 rounded-lg scale-75"
+              className="position absolute top-22 right-[50%] -mr-19 text-SuperLighterBrown bg-StaticWhite border-[.5px] border-Border py-2 rounded-lg scale-75"
             >
               <svg fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" shapeRendering="geometricPrecision" viewBox="0 0 24 24" height="24" width="24" style="color: currentcolor;">
                 <path d="M17 8.517L12 3 7 8.517m0 6.963l5 5.517 5-5.517"></path>
