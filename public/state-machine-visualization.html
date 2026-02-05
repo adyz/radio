@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Radio Player State Machine</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f5f5f5;
+    }
+    h1 {
+      color: #333;
+      border-bottom: 3px solid #4CAF50;
+      padding-bottom: 10px;
+    }
+    h2 {
+      color: #555;
+      margin-top: 30px;
+    }
+    .section {
+      background: white;
+      padding: 20px;
+      margin: 20px 0;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .state-machine {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+      margin: 20px 0;
+    }
+    .state {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+      font-weight: bold;
+      position: relative;
+    }
+    .state.idle { background: linear-gradient(135deg, #90CAF9 0%, #64B5F6 100%); }
+    .state.loading { background: linear-gradient(135deg, #FFF176 0%, #FFD54F 100%); color: #333; }
+    .state.playing { background: linear-gradient(135deg, #81C784 0%, #66BB6A 100%); }
+    .state.paused { background: linear-gradient(135deg, #FFB74D 0%, #FFA726 100%); }
+    .state.error { background: linear-gradient(135deg, #EF5350 0%, #E53935 100%); }
+    .state-title {
+      font-size: 1.4em;
+      margin-bottom: 10px;
+    }
+    .state-description {
+      font-size: 0.9em;
+      opacity: 0.9;
+    }
+    .transitions {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 20px 0;
+      font-size: 1.5em;
+    }
+    .arrow {
+      margin: 0 10px;
+      color: #4CAF50;
+    }
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    .comparison-item {
+      padding: 15px;
+      border-radius: 8px;
+    }
+    .bad {
+      background: #FFEBEE;
+      border-left: 4px solid #EF5350;
+    }
+    .good {
+      background: #E8F5E9;
+      border-left: 4px solid #66BB6A;
+    }
+    .code {
+      background: #f5f5f5;
+      padding: 10px;
+      border-radius: 4px;
+      font-family: 'Courier New', monospace;
+      margin: 10px 0;
+    }
+    .benefits {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .benefit {
+      padding: 15px;
+      background: #E3F2FD;
+      border-radius: 8px;
+      border-left: 4px solid #2196F3;
+    }
+    .benefit-title {
+      font-weight: bold;
+      color: #1976D2;
+      margin-bottom: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎵 Radio Player State Machine</h1>
+  
+  <div class="section">
+    <h2>Why State Machines?</h2>
+    <p>State machines provide a clear, predictable way to manage application state by making impossible states impossible and transitions explicit.</p>
+    
+    <div class="comparison">
+      <div class="comparison-item bad">
+        <h3>❌ Current: Multiple Booleans</h3>
+        <div class="code">
+          isPlaying: false<br>
+          isLoading: false<br>
+          hasError: false
+        </div>
+        <p><strong>Problem:</strong> 2³ = 8 possible combinations, but only 5 are valid!</p>
+        <p>Can accidentally have <code>isPlaying=true</code> AND <code>isLoading=true</code> ❌</p>
+      </div>
+      
+      <div class="comparison-item good">
+        <h3>✅ State Machine: Single State</h3>
+        <div class="code">
+          state: 'idle' | 'loading' |<br>
+          'playing' | 'paused' | 'error'
+        </div>
+        <p><strong>Benefit:</strong> Exactly 5 possible values, all valid!</p>
+        <p>Can ONLY be in one state at a time ✅</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>States</h2>
+    <div class="state-machine">
+      <div class="state idle">
+        <div class="state-title">IDLE</div>
+        <div class="state-description">Initial state, no radio selected</div>
+      </div>
+      
+      <div class="state loading">
+        <div class="state-title">LOADING</div>
+        <div class="state-description">Connecting to stream, show spinner</div>
+      </div>
+      
+      <div class="state playing">
+        <div class="state-title">PLAYING</div>
+        <div class="state-description">Radio is playing, show pause button</div>
+      </div>
+      
+      <div class="state paused">
+        <div class="state-title">PAUSED</div>
+        <div class="state-description">Radio paused, auto-resume after 2s</div>
+      </div>
+      
+      <div class="state error">
+        <div class="state-title">ERROR</div>
+        <div class="state-description">Failed to load, show error message</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Transitions</h2>
+    <div class="transitions">
+      <span>IDLE</span>
+      <span class="arrow">→</span>
+      <span>LOADING</span>
+      <span class="arrow">→</span>
+      <span>PLAYING</span>
+      <span class="arrow">⇄</span>
+      <span>PAUSED</span>
+    </div>
+    <div class="transitions">
+      <span>LOADING</span>
+      <span class="arrow">→</span>
+      <span>ERROR</span>
+      <span class="arrow">→</span>
+      <span>LOADING</span>
+    </div>
+    <p style="text-align: center; color: #666;">
+      <strong>Events:</strong> PLAY, PAUSE, NEXT, PREV, SELECT_STATION, SUCCESS, FAILURE
+    </p>
+  </div>
+
+  <div class="section">
+    <h2>Benefits</h2>
+    <div class="benefits">
+      <div class="benefit">
+        <div class="benefit-title">🚫 Impossible States Prevented</div>
+        <p>Can't be playing AND loading simultaneously</p>
+      </div>
+      
+      <div class="benefit">
+        <div class="benefit-title">📍 Explicit Transitions</div>
+        <p>Clear rules for what states can transition to what</p>
+      </div>
+      
+      <div class="benefit">
+        <div class="benefit-title">🎯 Centralized Logic</div>
+        <p>All state management in one place, not scattered</p>
+      </div>
+      
+      <div class="benefit">
+        <div class="benefit-title">✅ Better Testing</div>
+        <p>Test each state and transition independently</p>
+      </div>
+      
+      <div class="benefit">
+        <div class="benefit-title">🔒 Type Safety</div>
+        <p>TypeScript catches invalid states at compile time</p>
+      </div>
+      
+      <div class="benefit">
+        <div class="benefit-title">📊 Visual Documentation</div>
+        <p>Diagram serves as living documentation</p>
+      </div>
+      
+      <div class="benefit">
+        <div class="benefit-title">🐛 Easier Debugging</div>
+        <p>See current state in dev tools, time-travel debugging</p>
+      </div>
+      
+      <div class="benefit">
+        <div class="benefit-title">🔄 No Race Conditions</div>
+        <p>State changes are atomic and predictable</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Implementation Options</h2>
+    
+    <h3>Option 1: Simple TypeScript</h3>
+    <div class="code" style="background: #2d2d2d; color: #f8f8f2; padding: 15px;">
+type State = <br>
+  | { status: 'idle' }<br>
+  | { status: 'loading'; stationIndex: number }<br>
+  | { status: 'playing'; stationIndex: number }<br>
+  | { status: 'error'; error: string };<br>
+<br>
+const [state, setState] = useState&lt;State&gt;({ status: 'idle' });
+    </div>
+    
+    <h3>Option 2: XState (Recommended)</h3>
+    <div class="code" style="background: #2d2d2d; color: #f8f8f2; padding: 15px;">
+const radioMachine = createMachine({<br>
+  id: 'radio',<br>
+  initial: 'idle',<br>
+  states: {<br>
+    idle: { on: { PLAY: 'loading' } },<br>
+    loading: { on: { SUCCESS: 'playing', FAILURE: 'error' } },<br>
+    playing: { on: { PAUSE: 'paused' } },<br>
+    paused: { on: { PLAY: 'playing' } },<br>
+    error: { on: { RETRY: 'loading' } }<br>
+  }<br>
+});<br>
+<br>
+const [state, send] = useMachine(radioMachine);
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Learn More</h2>
+    <p>For complete documentation, see:</p>
+    <ul>
+      <li><strong>STATE_MACHINE.md</strong> - Comprehensive explanation</li>
+      <li><strong>STATE_MACHINE_DIAGRAM.md</strong> - Interactive Mermaid diagram</li>
+      <li><strong>README.md</strong> - Project overview</li>
+    </ul>
+    <p>These files provide:</p>
+    <ul>
+      <li>Detailed comparison of current vs state machine approach</li>
+      <li>Full state transition diagram</li>
+      <li>Side effects and guard conditions</li>
+      <li>Testing strategies</li>
+      <li>Implementation code examples</li>
+    </ul>
+  </div>
+</body>
+</html>
