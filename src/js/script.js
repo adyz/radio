@@ -16,11 +16,6 @@ const nextButton = document.getElementById('nextButton');
 
 const posterImage = document.getElementById('posterImage');
 
-let hasError = false;
-let isLoading = false;
-
-let lastPauseTime = null;
-
 function cloudinaryImageUrl(text, live = false) {
   const url_non_live = 'nndti4oybhdzggf8epvh';
   const url_live = 'rhz6yy4btbqicjqhsy7a';
@@ -28,47 +23,6 @@ function cloudinaryImageUrl(text, live = false) {
 }
 
 posterImage.querySelector('img').src = cloudinaryImageUrl('Coji Radio Player');
-
-const updateMediaSession = () => {
-  const title = radioSelect.options[radioSelect.selectedIndex].text;
-  if ('mediaSession' in navigator) {
-
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: isLoading ? `Se încarcă...${title}` : hasError ? `Eroare la încărcarea ${title}` : title,
-      artist: `Coji Radio Player | ${title}`,
-      artwork: [{ src: cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, title && !isLoading && !hasError ? true : false) }]
-    });
-    
-    navigator.mediaSession.setActionHandler('previoustrack', () => {
-      console.log('prev by media session');
-      prevRadio()
-    });
-    navigator.mediaSession.setActionHandler('nexttrack', () => {
-      console.log('next by media session');
-      nextRadio()
-    });
-
-    if(!isLoading && !hasError) {
-      navigator.mediaSession.setActionHandler('pause', () => {
-        console.log('paused by media session');
-        player.pause()
-      });
-      navigator.mediaSession.setActionHandler('play', () => {
-        console.log('played by media session');
-        player.play();
-      });
-    }
-  }
-
-  // update poster image
-  posterImage.querySelector('img').src = cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, title && !isLoading && !hasError ? true : false);
-
-  // update document title
-  document.title = `${isLoading ? "⏳" : ''} ${hasError ? '❤️‍🩹' : ''} ${!isLoading && !hasError ? '🔴' : ''} ${isLoading ? `Se incarca ${title}` : hasError ? 'Eroare' : title}`;
-
-  // update loading message
-  loadingMsg.innerText = isLoading ? `Se incarca ${title}...` : '';
-};
 
 function audioInstance(htmlElement) {
   let initialSrc = htmlElement.querySelector('source').src;
@@ -105,163 +59,255 @@ function audioInstance(htmlElement) {
   return instance;
 }
 
-
 const loadingNoiseInstance = audioInstance(loadingNoise);
 const errorNoiseInstance = audioInstance(errorNoise);
 
-const playRadio = (index) => {
-  console.log('playRadio', { index: index, value: radioSelect.value });
-  radioSelect.selectedIndex = index;
 
-  isLoading = true;
-  hasError = false;
+// --- State Machine ---
 
-  updateMediaSession();
+const PAUSE_RELOAD_THRESHOLD_MS = 2000;
 
-  errorNoiseInstance.stop();
-  loadingNoiseInstance.play();
-  [playButton, pauseButton].forEach(button => button.classList.add('opacity-50', 'cursor-not-allowed'));
+const machine = {
+  state: 'idle',
+  lastPauseTime: null,
 
-  loadingMsg.classList.remove('invisible');
-  errorMsg.classList.add('invisible');
+  transitions: {
+    idle: {
+      PLAY: 'loading',
+      NEXT: 'loading',
+      PREV: 'loading',
+    },
+    loading: {
+      LOADED: 'playing',
+      FAIL: 'error',
+      PLAY: 'loading',
+      NEXT: 'loading',
+      PREV: 'loading',
+    },
+    playing: {
+      PAUSE: 'paused',
+      NEXT: 'loading',
+      PREV: 'loading',
+    },
+    paused: {
+      PLAY: function (ctx) {
+        const timeDiff = performance.now() - ctx.lastPauseTime;
+        return timeDiff > PAUSE_RELOAD_THRESHOLD_MS ? 'loading' : 'playing';
+      },
+      NEXT: 'loading',
+      PREV: 'loading',
+    },
+    error: {
+      PLAY: 'loading',
+      NEXT: 'loading',
+      PREV: 'loading',
+    },
+  },
 
-  player.pause();
-  player.src = radioSelect.value;
-  player.load();
-
-  player.play().then(() => {
-    isLoading = false;
-    hasError = false;
-    loadingMsg.classList.add('invisible');
-    errorMsg.classList.add('invisible');
-    [playButton, pauseButton].forEach(button => button.classList.remove('opacity-50', 'cursor-not-allowed'));
-
-    loadingNoiseInstance.stop();
-
-    updateMediaSession();
-  }).catch(error => {
-
-    if (error.name === 'AbortError') {
+  send(event, data = {}) {
+    const stateTransitions = this.transitions[this.state];
+    if (!stateTransitions || !(event in stateTransitions)) {
+      console.log(`[StateMachine] No transition: ${this.state} + ${event}`);
       return;
     }
 
-    console.log('Error playing radio:', error);
+    const target = stateTransitions[event];
+    const from = this.state;
+    const to = typeof target === 'function' ? target(this) : target;
 
-    isLoading = false;
-    hasError = true;
+    console.log(`[StateMachine] ${from} + ${event} → ${to}`, data);
+    this.state = to;
+    this.onEnter(to, event, data, from);
+  },
 
-    loadingMsg.classList.add('invisible');
-    errorMsg.classList.remove('invisible');
-    [playButton, pauseButton].forEach(button => button.classList.remove('opacity-50', 'cursor-not-allowed'));
+  onEnter(state, event, data, from) {
+    switch (state) {
+      case 'loading': this.enterLoading(data); break;
+      case 'playing': this.enterPlaying(from); break;
+      case 'paused':  this.enterPaused(); break;
+      case 'error':   this.enterError(); break;
+    }
+  },
+
+  enterLoading(data) {
+    const index = data.index ?? radioSelect.selectedIndex;
+    radioSelect.selectedIndex = index;
+
+    console.log('playRadio', { index, value: radioSelect.value });
+
+    errorNoiseInstance.stop();
+    loadingNoiseInstance.play();
+
+    [playButton, pauseButton].forEach(b => b.classList.add('opacity-50', 'cursor-not-allowed'));
+    loadingMsg.classList.remove('invisible');
+    errorMsg.classList.add('invisible');
+
+    updateMediaSession();
+
+    player.pause();
+    player.src = radioSelect.value;
+    player.load();
+
+    player.play().then(() => {
+      machine.send('LOADED');
+    }).catch(error => {
+      if (error.name === 'AbortError') return;
+      console.log('Error playing radio:', error);
+      machine.send('FAIL');
+    });
+  },
+
+  enterPlaying(from) {
+    if (from === 'paused') {
+      player.play();
+    }
 
     loadingNoiseInstance.stop();
-    errorNoiseInstance.play();
+    errorNoiseInstance.stop();
+
+    [playButton, pauseButton].forEach(b => b.classList.remove('opacity-50', 'cursor-not-allowed'));
+    playButton.classList.add('hidden');
+    pauseButton.classList.remove('hidden');
+    loadingMsg.classList.add('invisible');
+    errorMsg.classList.add('invisible');
+
+    this.lastPauseTime = null;
     updateMediaSession();
-  });
+  },
+
+  enterPaused() {
+    this.lastPauseTime = performance.now();
+    player.pause();
+
+    playButton.classList.remove('hidden');
+    pauseButton.classList.add('hidden');
+  },
+
+  enterError() {
+    loadingNoiseInstance.stop();
+    errorNoiseInstance.play();
+
+    [playButton, pauseButton].forEach(b => b.classList.remove('opacity-50', 'cursor-not-allowed'));
+    loadingMsg.classList.add('invisible');
+    errorMsg.classList.remove('invisible');
+
+    updateMediaSession();
+  },
 };
+
+
+// --- Update Media Session ---
+
+const updateMediaSession = () => {
+  const title = radioSelect.options[radioSelect.selectedIndex].text;
+  const isLoading = machine.state === 'loading';
+  const hasError = machine.state === 'error';
+  const isLive = !isLoading && !hasError && !!title;
+
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: isLoading ? `Se încarcă...${title}` : hasError ? `Eroare la încărcarea ${title}` : title,
+      artist: `Coji Radio Player | ${title}`,
+      artwork: [{ src: cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, isLive) }]
+    });
+
+    navigator.mediaSession.setActionHandler('previoustrack', () => {
+      console.log('prev by media session');
+      sendPrev();
+    });
+    navigator.mediaSession.setActionHandler('nexttrack', () => {
+      console.log('next by media session');
+      sendNext();
+    });
+
+    if (!isLoading && !hasError) {
+      navigator.mediaSession.setActionHandler('pause', () => {
+        console.log('paused by media session');
+        machine.send('PAUSE');
+      });
+      navigator.mediaSession.setActionHandler('play', () => {
+        console.log('played by media session');
+        machine.send('PLAY', { index: radioSelect.selectedIndex });
+      });
+    }
+  }
+
+  // update poster image
+  posterImage.querySelector('img').src = cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, isLive);
+
+  // update document title
+  document.title = `${isLoading ? "⏳" : ''} ${hasError ? '❤️‍🩹' : ''} ${!isLoading && !hasError ? '🔴' : ''} ${isLoading ? `Se incarca ${title}` : hasError ? 'Eroare' : title}`;
+
+  // update loading message
+  loadingMsg.innerText = isLoading ? `Se incarca ${title}...` : '';
+};
+
+
+// --- Actions ---
+
+const sendPrev = () => {
+  console.log('prevRadio', radioSelect.selectedIndex);
+  const index = radioSelect.selectedIndex === 0 ? radioSelect.options.length - 1 : radioSelect.selectedIndex - 1;
+  machine.send('PREV', { index });
+};
+
+const sendNext = () => {
+  console.log('nextRadio', radioSelect.selectedIndex);
+  const index = radioSelect.selectedIndex === radioSelect.options.length - 1 ? 0 : radioSelect.selectedIndex + 1;
+  machine.send('NEXT', { index });
+};
+
+
+// --- Event Listeners ---
 
 radioSelect.addEventListener('change', (e) => {
   if (e.target.value) {
-    playRadio(radioSelect.selectedIndex);
+    machine.send('PLAY', { index: radioSelect.selectedIndex });
   } else {
     player.pause();
     player.src = '';
   }
 });
 
-const prevRadio = () => {
-  console.log('prevRadio', radioSelect.selectedIndex);
-  playRadio(radioSelect.selectedIndex === 0 ? radioSelect.options.length - 1 : radioSelect.selectedIndex - 1);
-};
+playButton.addEventListener('click', () => {
+  machine.send('PLAY', { index: radioSelect.selectedIndex });
+});
 
-const nextRadio = () => {
-  console.log('nextRadio', radioSelect.selectedIndex);  
-  playRadio(radioSelect.selectedIndex === radioSelect.options.length - 1 ? 0 : radioSelect.selectedIndex + 1);
-};
+pauseButton.addEventListener('click', () => {
+  machine.send('PAUSE');
+});
+
+prevButton.addEventListener('click', sendPrev);
+nextButton.addEventListener('click', sendNext);
 
 if (window.electronAPI) {
   window.electronAPI.onMediaControl((command) => {
     console.log("Comandă media primită:", command);
 
-
     if (command === "playpause") {
-      if (player.paused) {
-        player.play();
+      if (machine.state === 'playing') {
+        machine.send('PAUSE');
       } else {
-        player.pause();
+        machine.send('PLAY', { index: radioSelect.selectedIndex });
       }
     } else if (command === "next") {
-      // Implementare pentru trecerea la următoarea melodie
-      console.log("Next track (nu este implementat)");
-      nextRadio();
+      console.log("Next track");
+      sendNext();
     } else if (command === "previous") {
-      // Implementare pentru melodia anterioară
-      console.log("Previous track (nu este implementat)");
-      prevRadio();
+      console.log("Previous track");
+      sendPrev();
     }
   });
 
-  // **Monitorizează starea audio și o trimite la Electron**
   document.addEventListener("DOMContentLoaded", () => {
     function updatePlaybackState() {
-      window.electronAPI.updatePlaybackState(!player.paused);
+      window.electronAPI.updatePlaybackState(machine.state === 'playing');
     }
 
     player.addEventListener("play", updatePlaybackState);
     player.addEventListener("pause", updatePlaybackState);
   });
-
 }
-
-
-// play button logic
-// on play, if no radio is selected, play the first one and make it selected
-// also hide the play button and show the pause button
-// on pause, show the play button and hide the pause button
-
-playButton.addEventListener('click', () => {
-  if (player.paused) {
-    if (radioSelect.selectedIndex === 0) {
-      playRadio(0);
-    } else {
-      player.play();
-    }
-  }
-});
-
-pauseButton.addEventListener('click', () => {
-  player.pause();
-});
-
-
-player.addEventListener('play', (e) => {
-  console.log('Event play', e);
-  playButton.classList.add('hidden');
-  pauseButton.classList.remove('hidden');
-  const now = performance.now();
-  const timeDiff = now - lastPauseTime;
-  if (lastPauseTime && timeDiff > 2000) {
-    console.log('Restart radio after pause', { timeDiff, e });
-    player.pause();
-    player.src = '';
-    playRadio(radioSelect.selectedIndex);
-  }
-
-  lastPauseTime = null;
-
-});
-
-player.addEventListener('pause', () => {
-  console.log('Event pause');
-  playButton.classList.remove('hidden');
-  pauseButton.classList.add('hidden');
-  lastPauseTime = performance.now();
-});
-
-
-// prev and next buttons
-prevButton.addEventListener('click', prevRadio);
-nextButton.addEventListener('click', nextRadio);
 
 
 const worker = new Worker("./js/keepAlive.js");
@@ -313,7 +359,7 @@ radios.forEach((radio, index) => {
   
   // play the radio on click
   new_button.addEventListener('click', () => {
-    playRadio(index);
+    machine.send('PLAY', { index });
     new_selector_content.classList.add('hidden');
   });
 
