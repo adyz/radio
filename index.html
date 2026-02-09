@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Radio Player Romania | Coji.ro</title>
   <!-- Favicon -->
-  <link rel="icon" href="./images/favicon.png" type="image/x-icon">
+  <link rel="icon" href="/images/favicon.png" type="image/x-icon">
   <meta name="theme-color" content="#fffdef" />
   <meta name="description" content="Radio Player Romania - Ascultă posturile tale de radio preferate.">
   <!-- ios theme color for head -->
@@ -17,17 +17,13 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="application-name" content="Radio Player Coji">
   <meta name="msapplication-TileColor" content="#fffdef">
-  <meta name="msapplication-TileImage" content="./images/logo.png">
+  <meta name="msapplication-TileImage" content="/images/logo.png">
 
-  <link rel="apple-touch-icon" href="./images/logo.png">
-  <link rel="apple-touch-startup-image" href="./images/logo.png">
+  <link rel="apple-touch-icon" href="/images/logo.png">
+  <link rel="apple-touch-startup-image" href="/images/logo.png">
 
   <!-- manifest -->
-  <link rel="manifest" href="./manifest.json">
-
-
-  <!-- Styles -->
-  <link rel="stylesheet" href="./css/output.css">
+  <link rel="manifest" href="/manifest.json">
 
 </head>
 
@@ -95,9 +91,9 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
 
         <div id="new_selector__content"
           class="hidden flex overflow-auto flex-col absolute top-0 left-0 w-full h-82 shadow-2xl border border-Border bg-White overscroll-contain rounded-3xl [scrollbar-width:thin]">
-          
-          
-          
+
+
+
         </div>
       </div>
 
@@ -166,34 +162,12 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
   </audio>
 
   <audio id="loadingNoise" loop>
-    <source src="./sounds/loading-low.mp3" type="audio/mpeg">
+    <source src="/sounds/loading-low.mp3" type="audio/mpeg">
   </audio>
 
   <audio id="errorNoise" loop>
-    <source src="./sounds/error-low.mp3" type="audio/mpeg">
+    <source src="/sounds/error-low.mp3" type="audio/mpeg">
   </audio>
-
-  <select id="radioSelect"
-    class="hidden border rounded-lg border-Border p-2 m-8 w-[70%] text-sm max-w-[540px] text-center text-Red">
-    <option value="https://live.kissfm.ro/kissfm.aacp">Kiss FM</option>
-    <option value="https://astreaming.europafm.ro:8443/europafm_aacp48k">Europa FM</option>
-    <option value="https://edge76.rcs-rds.ro/digifm/digifm.mp3?111">Digi FM</option>
-    <option value="https://live.magicfm.ro/magicfm.aacp">Magic FM</option>
-    <option value="https://astreaming.virginradio.ro:8443/virgin_aacp_64k">Virgin Radio România</option>
-    <option value="https://stream4.srr.ro:8443/romania-actualitati">Radio România Actualități</option>
-    <option value="https://edge126.rcs-rds.ro/profm/profm.mp3?1741968671569">ProFM</option>
-    <option value="https://live.rockfm.ro/rockfm.aacp">Rock FM</option>
-    <option value="https://live.guerrillaradio.ro:8443/guerrilla.aac">Radio Guerrilla</option>
-    <option value="https://asculta.nationalfm.ro:9102/nfm2">National FM</option>
-    <option value="https://edge126.rcs-rds.ro/profm/dancefm.mp3?1741969012508">Dance FM</option>
-    <option value="https://live.radiovibefm.eu/8052/stream">Vibe FM</option>
-    <option value="https://stream4.srr.ro:8443/romania-cultural">Radio România Cultural</option>
-    <option value="https://stream4.srr.ro:8443/romania-muzical">Radio România Muzical</option>
-    <option value="https://live.radioprob.ro/8888/live">Radio Pro-B România</option>
-    <option value="https://stream.vanillaradio.com:8016/stream/stream">Vanilla Radio Deep</option>
-    <option value="https://smooth.vanillaradio.com:8032/live">Vanilla Radio Smooth</option>
-    <option value="https://fresh.vanillaradio.com:8028/live">Vanilla Radio Fresh</option>
-  </select>
 
   <!-- Creator info: Adrian Florescu (http://adrianf.com) -->
   <footer class="text-center text-xs text-Brown mt-8">
@@ -201,7 +175,7 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
     <p>© 2025 Adrian Florescu | <a href="https://adrianf.com" target="_blank" rel="noopener">adrianf.com</a></p>
   </footer>
 
-  <script type="module" src="./js/script.js"></script>
+  <script type="module" src="/src/main.ts"></script>
 </body>
 
 </html>
