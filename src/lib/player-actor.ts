@@ -6,13 +6,14 @@ import { playerMachine } from './player-machine';
 function createAudioInstance(src: string): AudioInstance {
   const audio = new Audio(src);
   audio.loop = true;
+  audio.preload = 'auto';
   let isPlaying = false;
 
   return {
     src,
     play() {
       if (!isPlaying) {
-        audio.src = src;
+        audio.currentTime = 0;
         isPlaying = true;
         audio.play().catch((error: DOMException) => {
           if (error.name !== 'AbortError') {
@@ -25,7 +26,7 @@ function createAudioInstance(src: string): AudioInstance {
     stop() {
       if (isPlaying) {
         audio.pause();
-        audio.src = '';
+        audio.currentTime = 0;
         isPlaying = false;
       }
     },
