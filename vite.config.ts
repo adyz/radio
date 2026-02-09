@@ -1,13 +1,14 @@
 import { defineConfig } from 'vite';
 import tailwindcss from '@tailwindcss/vite';
+import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  plugins: [tailwindcss()],
+  plugins: [tailwindcss(), react()],
   build: {
     outDir: 'dist',
   },
   test: {
     environment: 'jsdom',
-    include: ['src/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'src/**/*.test.tsx'],
   },
 });

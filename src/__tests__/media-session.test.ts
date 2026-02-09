@@ -1,13 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { PlayerStatus } from '../types';
-import { updateMediaSession } from '../lib/media-session';
+import { updateMediaSession, getStatusDisplay } from '../lib/media-session';
 
 describe('updateMediaSession', () => {
-  let posterImg: HTMLImageElement;
-
   beforeEach(() => {
-    posterImg = document.createElement('img');
-
     // Mock Media Session API (jsdom nu o are)
     Object.defineProperty(navigator, 'mediaSession', {
       value: {
@@ -40,23 +36,9 @@ describe('updateMediaSession', () => {
       onNext: vi.fn(),
       onPause: vi.fn(),
       onPlay: vi.fn(),
-    }, posterImg);
+    });
 
     expect(document.title).toContain('Kiss FM');
-  });
-
-  it('setează poster image src cu URL Cloudinary', () => {
-    const status: PlayerStatus = { state: 'playing', stationIndex: 0 };
-    updateMediaSession(status, {
-      onPrevious: vi.fn(),
-      onNext: vi.fn(),
-      onPause: vi.fn(),
-      onPlay: vi.fn(),
-    }, posterImg);
-
-    expect(posterImg.src).toContain('cloudinary');
-    // jsdom URL-encode spațiile, deci verificăm varianta encoded
-    expect(posterImg.src).toContain('Kiss%20FM');
   });
 
   it('arată "Se încarcă..." în titlu când loading', () => {
@@ -66,7 +48,7 @@ describe('updateMediaSession', () => {
       onNext: vi.fn(),
       onPause: vi.fn(),
       onPlay: vi.fn(),
-    }, posterImg);
+    });
 
     expect(document.title).toContain('Se incarca');
     expect(document.title).toContain('Magic FM');
@@ -79,34 +61,9 @@ describe('updateMediaSession', () => {
       onNext: vi.fn(),
       onPause: vi.fn(),
       onPlay: vi.fn(),
-    }, posterImg);
+    });
 
     expect(document.title).toContain('Eroare');
-  });
-
-  it('folosește imaginea live când starea e playing', () => {
-    const status: PlayerStatus = { state: 'playing', stationIndex: 0 };
-    updateMediaSession(status, {
-      onPrevious: vi.fn(),
-      onNext: vi.fn(),
-      onPause: vi.fn(),
-      onPlay: vi.fn(),
-    }, posterImg);
-
-    // Imaginea live are alt ID Cloudinary
-    expect(posterImg.src).toContain('rhz6yy4btbqicjqhsy7a');
-  });
-
-  it('folosește imaginea default când starea e loading', () => {
-    const status: PlayerStatus = { state: 'loading', stationIndex: 0 };
-    updateMediaSession(status, {
-      onPrevious: vi.fn(),
-      onNext: vi.fn(),
-      onPause: vi.fn(),
-      onPlay: vi.fn(),
-    }, posterImg);
-
-    expect(posterImg.src).toContain('nndti4oybhdzggf8epvh');
   });
 
   it('setează Media Session metadata cu artist-ul corect', () => {
@@ -116,7 +73,7 @@ describe('updateMediaSession', () => {
       onNext: vi.fn(),
       onPause: vi.fn(),
       onPlay: vi.fn(),
-    }, posterImg);
+    });
 
     const metadata = navigator.mediaSession.metadata as any;
     expect(metadata.artist).toContain('Rock FM');
@@ -133,7 +90,7 @@ describe('updateMediaSession', () => {
       onNext: onNext,
       onPause: vi.fn(),
       onPlay: vi.fn(),
-    }, posterImg);
+    });
 
     const setHandler = navigator.mediaSession.setActionHandler as ReturnType<typeof vi.fn>;
     const calls = setHandler.mock.calls;
@@ -150,7 +107,7 @@ describe('updateMediaSession', () => {
       onNext: vi.fn(),
       onPause: vi.fn(),
       onPlay: vi.fn(),
-    }, posterImg);
+    });
 
     const setHandler = navigator.mediaSession.setActionHandler as ReturnType<typeof vi.fn>;
     const calls = setHandler.mock.calls;
@@ -167,7 +124,7 @@ describe('updateMediaSession', () => {
       onNext: vi.fn(),
       onPause: vi.fn(),
       onPlay: vi.fn(),
-    }, posterImg);
+    });
 
     const setHandler = navigator.mediaSession.setActionHandler as ReturnType<typeof vi.fn>;
     const calls = setHandler.mock.calls;
@@ -183,9 +140,29 @@ describe('updateMediaSession', () => {
       onNext: vi.fn(),
       onPause: vi.fn(),
       onPlay: vi.fn(),
-    }, posterImg);
+    });
 
     const metadata = navigator.mediaSession.metadata as any;
     expect(metadata.title).toBe('Coji Radio Player');
+  });
+});
+
+describe('getStatusDisplay', () => {
+  it('folosește imaginea live când starea e playing', () => {
+    const status: PlayerStatus = { state: 'playing', stationIndex: 0 };
+    const display = getStatusDisplay(status);
+    expect(display.artworkUrl).toContain('rhz6yy4btbqicjqhsy7a');
+  });
+
+  it('folosește imaginea default când starea e loading', () => {
+    const status: PlayerStatus = { state: 'loading', stationIndex: 0 };
+    const display = getStatusDisplay(status);
+    expect(display.artworkUrl).toContain('nndti4oybhdzggf8epvh');
+  });
+
+  it('returnează numele stației corect', () => {
+    const status: PlayerStatus = { state: 'playing', stationIndex: 0 };
+    const display = getStatusDisplay(status);
+    expect(display.stationName).toBe('Kiss FM');
   });
 });

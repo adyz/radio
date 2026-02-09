@@ -22,12 +22,6 @@ export const playerMachine = setup({
     stopLoadingNoise: () => {},
     playErrorNoise: () => {},
     stopErrorNoise: () => {},
-    disableButtons: () => {},
-    enableButtons: () => {},
-    showLoadingMsg: () => {},
-    hideLoadingMsg: () => {},
-    showErrorMsg: () => {},
-    hideErrorMsg: () => {},
     loadStream: () => {},
   },
   guards: {
@@ -66,14 +60,7 @@ export const playerMachine = setup({
     },
 
     loading: {
-      entry: [
-        'stopErrorNoise',
-        'playLoadingNoise',
-        'disableButtons',
-        'showLoadingMsg',
-        'hideErrorMsg',
-        'loadStream',
-      ],
+      entry: ['stopErrorNoise', 'playLoadingNoise', 'loadStream'],
       on: {
         STREAM_READY: 'playing',
         STREAM_ERROR: 'error',
@@ -103,12 +90,7 @@ export const playerMachine = setup({
     },
 
     playing: {
-      entry: [
-        'stopLoadingNoise',
-        'enableButtons',
-        'hideLoadingMsg',
-        'hideErrorMsg',
-      ],
+      entry: ['stopLoadingNoise'],
       on: {
         PLAY: {
           target: 'loading',
@@ -133,13 +115,7 @@ export const playerMachine = setup({
     },
 
     error: {
-      entry: [
-        'stopLoadingNoise',
-        'playErrorNoise',
-        'enableButtons',
-        'hideLoadingMsg',
-        'showErrorMsg',
-      ],
+      entry: ['stopLoadingNoise', 'playErrorNoise'],
       on: {
         PLAY: {
           target: 'loading',

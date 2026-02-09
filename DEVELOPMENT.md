@@ -4,20 +4,23 @@
 
 | Tehnologie | Versiune | Rol |
 |---|---|---|
+| React | 19 | UI framework, componente declarative |
 | TypeScript | 5.7+ | Limbaj principal, `strict: true` |
 | Vite | 6 | Build tool, dev server, HMR |
+| XState | 5 | State machine pentru player (audio-only actions) |
+| @xstate/react | 5 | `useSelector` pentru reactive state in componente |
 | Tailwind CSS | 4 | Styling (via `@tailwindcss/vite` plugin) |
-| XState | 5 | State machine pentru player |
-| Vitest | 4 | Test runner (70 teste) |
+| Vitest | 4 | Test runner (73 teste) |
+| @testing-library/react | 16 | Component tests |
 | jsdom | 28 | DOM environment pentru teste |
 
 ## Structura proiectului
 
 ```
 radio/
-  index.html                     # Entry point HTML (root, cerinta Vite)
-  vite.config.ts                 # Vite + Tailwind plugin + Vitest config
-  tsconfig.json                  # TypeScript strict config
+  index.html                     # Entry point HTML (root, doar <div id="root">)
+  vite.config.ts                 # Vite + React + Tailwind plugin + Vitest config
+  tsconfig.json                  # TypeScript strict config + jsx: react-jsx
   package.json                   # Scripts si dependente
   vercel.json                    # Vercel deployment config
 
@@ -28,45 +31,58 @@ radio/
     sounds/                      # MP3-uri pentru loading/error feedback
 
   src/
-    main.ts                      # Entry point: imports CSS, init modules, event wiring
+    main.tsx                     # Entry point React: createRoot + <App />
     css/app.css                  # Tailwind v4 cu @theme (custom colors, dark mode)
+
+    components/
+      App.tsx                    # Root component, XState actor, hooks wiring
+      Logo.tsx                   # SVG logo + titlu
+      PlayerControls.tsx         # Prev/Play/Pause/Next buttons
+      StationSelector.tsx        # Custom dropdown cu lista de statii
+      PosterImage.tsx            # Imagine Cloudinary cu statia curenta
+      StatusMessage.tsx          # Mesaje loading/error (declarativ)
+      Footer.tsx                 # Copyright info
+
+    hooks/
+      useMediaSession.ts         # Media Session API + document title
+      useElectronBridge.ts       # Electron API bridge (conditional)
+      useKeepAlive.ts            # Web Worker lifecycle
+      useTheme.ts                # Dark/light theme-color meta tag
+      useServiceWorker.ts        # SW registration
 
     data/
       stations.ts                # Array-ul de statii radio (as const satisfies)
 
     types/
-      index.ts                   # PlayerStatus, PlayerElements, AudioInstance
+      index.ts                   # PlayerStatus, AudioInstance
       global.d.ts                # Window.electronAPI augmentation
 
     lib/
-      player-machine.ts          # XState state machine definition
-      player.ts                  # Actor instance, side effects, subscribe
-      audio.ts                   # createAudioInstance() factory
-      media-session.ts           # Media Session API wrapper
+      player-machine.ts          # XState state machine (5 audio actions only)
+      player-actor.ts            # Actor instance cu .provide() audio actions
+      media-session.ts           # getStatusDisplay() + updateMediaSession()
       cloudinary.ts              # Cloudinary poster URL builder
-      selector.ts                # Custom dropdown UI
-      theme.ts                   # Dark/light theme-color meta tag
-      dom.ts                     # getElement<T>() helper
-      electron.ts                # Electron API bridge (conditional)
 
     workers/
       keep-alive.ts              # Web Worker: postMessage every 5s
 
-    __tests__/                   # 7 fisiere de test, 70 asertii
+    __tests__/                   # 8 fisiere de test, 73 asertii
       player-machine.test.ts     # Tranzitii state machine (21 teste)
-      player-effects.test.ts     # Side effects: loading/error noise (14 teste)
-      audio.test.ts              # AudioInstance play/stop (8 teste)
+      player-effects.test.ts     # Side effects: loading/error noise (11 teste)
       media-session.test.ts      # Titlu, poster, metadata (11 teste)
       cloudinary.test.ts         # URL generation (6 teste)
       stations.test.ts           # Validare date statii (7 teste)
-      dom.test.ts                # DOM helper (3 teste)
+      components/
+        StatusMessage.test.tsx   # Mesaje per stare (5 teste)
+        PlayerControls.test.tsx  # Butoane: disabled, play/pause toggle (7 teste)
+        StationSelector.test.tsx # Lista statii, selectie, bg-Red (5 teste)
 ```
 
 ## Arhitectura
 
-### State machine (XState v5)
+### State machine (XState v5) — Audio-only
 
-Player-ul e controlat de o state machine cu 4 stari:
+Player-ul e controlat de o state machine cu 4 stari. Dupa migrarea pe React, masina gestioneaza **doar side effects audio** — UI-ul se deriveaza declarativ din stare in componente.
 
 ```
          PLAY(index)
@@ -92,35 +108,53 @@ Player-ul e controlat de o state machine cu 4 stari:
 
 **Guard:** `isValidIndex` - respinge PLAY cu index in afara range-ului `[0, STATIONS.length)`.
 
-**Entry actions per stare:**
-- `loading`: stopErrorNoise, playLoadingNoise, disableButtons, showLoadingMsg, hideErrorMsg, loadStream
-- `playing`: stopLoadingNoise, enableButtons, hideLoadingMsg, hideErrorMsg
-- `error`: stopLoadingNoise, playErrorNoise, enableButtons, hideLoadingMsg, showErrorMsg
+**Entry actions (doar audio):**
+- `loading`: stopErrorNoise, playLoadingNoise, loadStream
+- `playing`: stopLoadingNoise
+- `error`: stopLoadingNoise, playErrorNoise
 
-**Subscribe:** Media session + document title + poster image se updateaza prin `actor.subscribe()` (nu prin entry actions), pentru ca snapshot-ul e settlat la momentul callback-ului.
+**Ce s-a eliminat din masina:** 6 DOM actions (disableButtons, enableButtons, showLoadingMsg, hideLoadingMsg, showErrorMsg, hideErrorMsg) — React le inlocuieste cu rendering declarativ.
 
 ### Separarea responsabilitatilor
 
 ```
-player-machine.ts  →  Definitia pura a masinii (testabila fara DOM)
+player-machine.ts  →  Definitia pura a masinii (testabila fara DOM/React)
        │
        v
-player.ts          →  Actor instance + .provide() cu side effects reale
-       │                + actor.subscribe() pentru media session
+player-actor.ts    →  Actor instance + .provide() cu audio side effects
+       │                (loadingNoise, errorNoise via new Audio())
        v
-main.ts            →  DOM init, event listeners, wire-up
+App.tsx            →  useSelector(actor) → stare reactiva → UI declarativ
+       │
+       v
+hooks/             →  Side effects (Media Session, Electron, theme, SW, Worker)
 ```
 
-Mașina (player-machine.ts) nu are side effects - e o definitie pura cu actiuni stub. `player.ts` creeaza actorul si furnizeaza implementarile reale prin `.provide()`. Asta permite testarea masinii fara DOM.
+Masina (player-machine.ts) nu are side effects — e o definitie pura cu actiuni stub. `player-actor.ts` creeaza actorul si furnizeaza implementarile audio reale prin `.provide()`. Componentele React citesc starea cu `useSelector()` si rendereaza declarativ.
+
+### React + XState integration
+
+```tsx
+// In App.tsx
+const state = useSelector(actor, snap => snap.value);           // 'idle' | 'loading' | ...
+const stationIndex = useSelector(actor, snap => snap.context.stationIndex);
+
+// UI-ul e o functie de stare — fara classList.add/remove
+<PlayerControls state={state} ... />      // disabled derivat din state === 'loading'
+<StatusMessage status={status} />          // null cand idle/playing, mesaj cand loading/error
+<PosterImage status={status} ... />        // artworkUrl derivat din getStatusDisplay()
+```
 
 ### Audio management
 
-`createAudioInstance()` in `audio.ts` wraps un `HTMLAudioElement` intr-un obiect cu `play()` si `stop()`. Guard-ul intern `isPlaying` previne double-play si double-stop.
+`player-actor.ts` creeaza loading/error noise ca `new Audio()` programatic (nu mai depind de HTML elements):
 
-Trei instante audio:
-- **player** - stream-ul radio principal
-- **loadingNoise** - sunet de background in timpul loading-ului
-- **errorNoise** - sunet la eroare
+```typescript
+const loadingNoise = createAudioInstance('/sounds/loading-low.mp3');
+const errorNoise = createAudioInstance('/sounds/error-low.mp3');
+```
+
+Stream-ul radio principal e un `<audio ref={playerRef}>` in `App.tsx`, conectat la actor prin `setPlayerAudio()`.
 
 ### Cloudinary integration
 
@@ -137,9 +171,12 @@ Doua imagini de baza:
 - `nndti4oybhdzggf8epvh` - imaginea default (loading, error, idle)
 - `rhz6yy4btbqicjqhsy7a` - imaginea live (playing)
 
+Functia `getStatusDisplay()` din `media-session.ts` calculeaza URL-ul si e reutilizata atat in componenta `PosterImage` cat si in `updateMediaSession()`.
+
 ### TypeScript features folosite
 
 - `strict: true` + `noUncheckedIndexedAccess: true`
+- `jsx: "react-jsx"` (automatic JSX transform, fara import React)
 - `as const satisfies readonly RadioStation[]` pe array-ul de statii
 - Discriminated union `PlayerStatus` (state: 'idle' | 'loading' | 'playing' | 'error')
 - `import type` pentru imports type-only
@@ -171,7 +208,7 @@ CSS-ul foloseste Tailwind v4 native config (fara `tailwind.config.js`):
 }
 ```
 
-Plugin-ul `@tailwindcss/vite` proceseaza CSS-ul automat - detecteaza class-urile din toate fisierele din module graph.
+Plugin-ul `@tailwindcss/vite` proceseaza CSS-ul automat — detecteaza class-urile din toate fisierele din module graph (inclusiv .tsx).
 
 ## Comenzi
 
@@ -180,7 +217,7 @@ Plugin-ul `@tailwindcss/vite` proceseaza CSS-ul automat - detecteaza class-urile
 | `npm run dev` | Dev server cu HMR la `localhost:5173` |
 | `npm run build` | `tsc` (type check) + `vite build` (bundle in `dist/`) |
 | `npm run preview` | Serveste build-ul de productie local |
-| `npm test` | Ruleaza toate 70 testele o data |
+| `npm test` | Ruleaza toate 73 testele o data |
 | `npm run test:watch` | Teste in mod watch (rerun la save) |
 
 ## Adaugarea unei statii noi

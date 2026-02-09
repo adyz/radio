@@ -13,12 +13,6 @@ describe('playerMachine - side effects (sunet loading, error)', () => {
         stopLoadingNoise: () => { calls.push('stopLoadingNoise'); },
         playErrorNoise: () => { calls.push('playErrorNoise'); },
         stopErrorNoise: () => { calls.push('stopErrorNoise'); },
-        disableButtons: () => { calls.push('disableButtons'); },
-        enableButtons: () => { calls.push('enableButtons'); },
-        showLoadingMsg: () => { calls.push('showLoadingMsg'); },
-        hideLoadingMsg: () => { calls.push('hideLoadingMsg'); },
-        showErrorMsg: () => { calls.push('showErrorMsg'); },
-        hideErrorMsg: () => { calls.push('hideErrorMsg'); },
         loadStream: () => { calls.push('loadStream'); },
       },
     });
@@ -39,7 +33,7 @@ describe('playerMachine - side effects (sunet loading, error)', () => {
   it('oprește sunetul de loading când stream-ul pornește', () => {
     const actor = createTestActor();
     actor.send({ type: 'PLAY', index: 0 });
-    calls = []; // resetăm ca să vedem doar ce face STREAM_READY
+    calls = [];
 
     actor.send({ type: 'STREAM_READY' });
 
@@ -85,7 +79,6 @@ describe('playerMachine - side effects (sunet loading, error)', () => {
     actor.send({ type: 'STREAM_ERROR' });
     calls = [];
 
-    // Reîncearcă altă stație
     actor.send({ type: 'PLAY', index: 3 });
 
     expect(calls).toContain('stopErrorNoise');
@@ -100,41 +93,6 @@ describe('playerMachine - side effects (sunet loading, error)', () => {
     const stopIdx = calls.indexOf('stopErrorNoise');
     const playIdx = calls.indexOf('playLoadingNoise');
     expect(stopIdx).toBeLessThan(playIdx);
-  });
-
-  it('la intrarea în loading: dezactivează butoanele', () => {
-    const actor = createTestActor();
-    actor.send({ type: 'PLAY', index: 0 });
-
-    expect(calls).toContain('disableButtons');
-  });
-
-  // --- Acțiuni la playing ---
-
-  it('la intrarea în playing: reactivează butoanele și ascunde mesajele', () => {
-    const actor = createTestActor();
-    actor.send({ type: 'PLAY', index: 0 });
-    calls = [];
-
-    actor.send({ type: 'STREAM_READY' });
-
-    expect(calls).toContain('enableButtons');
-    expect(calls).toContain('hideLoadingMsg');
-    expect(calls).toContain('hideErrorMsg');
-  });
-
-  // --- Acțiuni la error ---
-
-  it('la intrarea în error: arată mesajul de eroare și reactivează butoanele', () => {
-    const actor = createTestActor();
-    actor.send({ type: 'PLAY', index: 0 });
-    calls = [];
-
-    actor.send({ type: 'STREAM_ERROR' });
-
-    expect(calls).toContain('showErrorMsg');
-    expect(calls).toContain('enableButtons');
-    expect(calls).toContain('hideLoadingMsg');
   });
 
   // --- loadStream ---
@@ -171,7 +129,6 @@ describe('playerMachine - side effects (sunet loading, error)', () => {
     actor.send({ type: 'STREAM_ERROR' });
     expect(calls).toContain('stopLoadingNoise');
     expect(calls).toContain('playErrorNoise');
-    expect(calls).toContain('showErrorMsg');
     calls = [];
 
     // 3. Dă NEXT -> Europa FM
@@ -185,11 +142,10 @@ describe('playerMachine - side effects (sunet loading, error)', () => {
     // 4. Reușește
     actor.send({ type: 'STREAM_READY' });
     expect(calls).toContain('stopLoadingNoise');
-    expect(calls).toContain('enableButtons');
     expect(calls).not.toContain('playErrorNoise');
   });
 
-  // --- Subscribe (media session se updatează prin subscribe, nu prin entry action) ---
+  // --- Subscribe ---
 
   it('subscribe-ul primește snapshot-ul corect la fiecare tranziție', () => {
     const states: string[] = [];
@@ -199,12 +155,6 @@ describe('playerMachine - side effects (sunet loading, error)', () => {
         stopLoadingNoise: () => {},
         playErrorNoise: () => {},
         stopErrorNoise: () => {},
-        disableButtons: () => {},
-        enableButtons: () => {},
-        showLoadingMsg: () => {},
-        hideLoadingMsg: () => {},
-        showErrorMsg: () => {},
-        hideErrorMsg: () => {},
         loadStream: () => {},
       },
     });
@@ -219,7 +169,6 @@ describe('playerMachine - side effects (sunet loading, error)', () => {
     actor.send({ type: 'NEXT' });
     actor.send({ type: 'STREAM_ERROR' });
 
-    // idle este din .start(), apoi loading, playing, loading, error
     expect(states).toEqual(['idle', 'loading', 'playing', 'loading', 'error']);
   });
 });
