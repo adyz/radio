@@ -61,6 +61,9 @@ export const actor = createActor(
         playerAudio.load();
 
         playerAudio.play().then(() => {
+          if ('mediaSession' in navigator) {
+            navigator.mediaSession.playbackState = 'playing';
+          }
           actor.send({ type: 'STREAM_READY' });
         }).catch((error: DOMException) => {
           if (error.name === 'AbortError') return;
