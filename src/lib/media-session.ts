@@ -58,12 +58,13 @@ export function updateMediaSession(
       artwork: [{ src: artworkUrl }],
     });
 
-    navigator.mediaSession.playbackState = status.state === 'playing' ? 'playing' : 'paused';
-
     navigator.mediaSession.setActionHandler('previoustrack', callbacks.onPrevious);
     navigator.mediaSession.setActionHandler('nexttrack', callbacks.onNext);
-    navigator.mediaSession.setActionHandler('pause', callbacks.onPause);
-    navigator.mediaSession.setActionHandler('play', callbacks.onPlay);
+
+    if (!isLoading && !isError) {
+      navigator.mediaSession.setActionHandler('pause', callbacks.onPause);
+      navigator.mediaSession.setActionHandler('play', callbacks.onPlay);
+    }
   }
 
   document.title = documentTitle;
