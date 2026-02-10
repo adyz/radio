@@ -116,7 +116,7 @@ describe('updateMediaSession', () => {
     expect(calls.some((c: any[]) => c[0] === 'play')).toBe(true);
   });
 
-  it('NU înregistrează play/pause handlers când e loading', () => {
+  it('înregistrează play/pause handlers și în starea loading', () => {
     const status: PlayerStatus = { state: 'loading', stationIndex: 0 };
 
     updateMediaSession(status, {
@@ -129,8 +129,8 @@ describe('updateMediaSession', () => {
     const setHandler = navigator.mediaSession.setActionHandler as ReturnType<typeof vi.fn>;
     const calls = setHandler.mock.calls;
 
-    expect(calls.some((c: any[]) => c[0] === 'pause')).toBe(false);
-    expect(calls.some((c: any[]) => c[0] === 'play')).toBe(false);
+    expect(calls.some((c: any[]) => c[0] === 'pause')).toBe(true);
+    expect(calls.some((c: any[]) => c[0] === 'play')).toBe(true);
   });
 
   it('starea idle folosește "Coji Radio Player" ca nume stație', () => {
