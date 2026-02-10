@@ -7,6 +7,8 @@ function createAudioInstance(src: string): AudioInstance {
   const audio = new Audio(src);
   audio.loop = true;
   audio.preload = 'auto';
+  audio.hidden = true;
+  document.body.appendChild(audio);
   let isPlaying = false;
 
   return {

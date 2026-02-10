@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useLayoutEffect } from 'react';
 import type { PlayerStatus } from '../types';
 import { updateMediaSession } from '../lib/media-session';
 import { prevRadio, nextRadio } from '../lib/player-actor';
@@ -7,7 +7,7 @@ export function useMediaSession(
   status: PlayerStatus,
   playerAudio: HTMLAudioElement | null,
 ): void {
-  useEffect(() => {
+  useLayoutEffect(() => {
     updateMediaSession(status, {
       onPrevious: prevRadio,
       onNext: nextRadio,
