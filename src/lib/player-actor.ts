@@ -2,13 +2,12 @@ import { createActor } from 'xstate';
 import type { AudioInstance } from '../types';
 import { STATIONS } from '../data/stations';
 import { playerMachine } from './player-machine';
+import { getStatusDisplay } from './media-session';
 
 function createAudioInstance(src: string): AudioInstance {
   const audio = new Audio(src);
   audio.loop = true;
   audio.preload = 'auto';
-  audio.hidden = true;
-  document.body.appendChild(audio);
   let isPlaying = false;
 
   return {
@@ -60,10 +59,21 @@ export const actor = createActor(
         playerAudio.src = station.streamUrl;
         playerAudio.load();
 
+        // Set media session metadata BEFORE play() so iOS/Chrome
+        // can associate the correct metadata with the audio element.
+        if ('mediaSession' in navigator) {
+          const status = { state: 'playing' as const, stationIndex: context.stationIndex };
+          const { displayTitle, stationName, artworkUrl } = getStatusDisplay(status);
+
+          navigator.mediaSession.playbackState = 'playing';
+          navigator.mediaSession.metadata = new MediaMetadata({
+            title: displayTitle,
+            artist: `Coji Radio Player | ${stationName}`,
+            artwork: [{ src: artworkUrl }],
+          });
+        }
+
         playerAudio.play().then(() => {
-          if ('mediaSession' in navigator) {
-            navigator.mediaSession.playbackState = 'playing';
-          }
           actor.send({ type: 'STREAM_READY' });
         }).catch((error: DOMException) => {
           if (error.name === 'AbortError') return;
