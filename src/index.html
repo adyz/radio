@@ -206,9 +206,26 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
   <footer class="text-center text-xs text-Brown mt-8">
     <p>Coji Radio Player</p>
     <p>© 2025 Adrian Florescu | <a href="https://adrianf.com" target="_blank" rel="noopener">adrianf.com</a></p>
+    <p class="mt-2">
+      <select id="scriptSelector" class="bg-Bg text-Brown border border-Border rounded px-1 text-xs">
+        <option value="script" selected>script.js (original)</option>
+        <option value="script-beta">script-beta.js (state machine)</option>
+      </select>
+    </p>
   </footer>
 
-  <script type="module" src="./js/script.js"></script>
+  <script>
+    const saved = localStorage.getItem('selectedScript') || 'script';
+    document.getElementById('scriptSelector').value = saved;
+    const s = document.createElement('script');
+    s.type = 'module';
+    s.src = `./js/${saved}.js`;
+    document.body.appendChild(s);
+    document.getElementById('scriptSelector').addEventListener('change', (e) => {
+      localStorage.setItem('selectedScript', e.target.value);
+      location.reload();
+    });
+  </script>
 </body>
 
 </html>
