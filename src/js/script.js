@@ -19,7 +19,7 @@ const posterImage = document.getElementById('posterImage');
 let state = 'idle'; // 'idle' | 'loading' | 'playing' | 'paused' | 'error'
 let retryCount = 0;
 const MAX_RETRIES = 1;
-const LOADING_TIMEOUT_MS = 10000;
+const LOADING_TIMEOUT_MS = 6000;
 
 let currentPlayId = 0;
 let retryTimer = null;
