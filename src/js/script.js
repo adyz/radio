@@ -17,7 +17,7 @@ const nextButton = document.getElementById('nextButton');
 
 const posterImage = document.getElementById('posterImage');
 
-let state = 'idle'; // 'idle' | 'loading' | 'playing' | 'paused' | 'error'
+let state = 'idle'; // 'idle' | 'loading' | 'playing' | 'paused' | 'retrying' | 'error'
 let retryCount = 0;
 const MAX_RETRIES = 1;
 const LOADING_TIMEOUT_MS = 6000;
@@ -38,7 +38,7 @@ posterImage.querySelector('img').src = cloudinaryImageUrl('Coji Radio Player');
 
 const updateMediaSession = () => {
   const title = radioSelect.options[radioSelect.selectedIndex].text;
-  const isLoading = state === 'loading';
+  const isLoading = state === 'loading' || state === 'retrying';
   const hasError = state === 'error';
   const isLive = state === 'playing';
 
@@ -143,50 +143,76 @@ const showButton = (which) => {
   stopButton.classList.toggle('hidden', which !== 'stop');
 };
 
+const setState = (newState) => {
+  const prev = state;
+  state = newState;
+  console.log(`State: ${prev} → ${newState}`);
+
+  // Button visibility
+  switch (newState) {
+    case 'idle':
+    case 'paused':
+      showButton('play');
+      break;
+    case 'playing':
+      showButton('pause');
+      break;
+    case 'loading':
+    case 'retrying':
+    case 'error':
+      showButton('stop');
+      break;
+  }
+
+  // Sounds
+  if (newState === 'loading') {
+    errorNoiseInstance.stop();
+    loadingNoiseInstance.play();
+  } else if (newState === 'retrying') {
+    // Keep loading sound playing through retry — no silence gap
+    errorNoiseInstance.stop();
+  } else if (newState === 'error') {
+    loadingNoiseInstance.stop();
+    errorNoiseInstance.play();
+  } else {
+    // idle, playing, paused
+    loadingNoiseInstance.stop();
+    errorNoiseInstance.stop();
+  }
+
+  // Messages
+  loadingMsg.classList.toggle('invisible', newState !== 'loading');
+  errorMsg.classList.toggle('invisible', newState !== 'error');
+
+  updateMediaSession();
+};
+
 const stopRadio = () => {
   console.log('stopRadio');
   clearTimeout(retryTimer);
   clearTimeout(loadingTimer);
-  currentPlayId++; // invalidate any pending callbacks
+  currentPlayId++;
+  retryCount = 0;
+  setState('idle');
   player.pause();
   player.src = '';
-  loadingNoiseInstance.stop();
-  errorNoiseInstance.stop();
-  state = 'idle';
-  retryCount = 0;
-  loadingMsg.classList.add('invisible');
-  errorMsg.classList.add('invisible');
-  showButton('play');
-  updateMediaSession();
 };
 
 const playRadio = (index) => {
-  console.log('playRadio', { index: index, value: radioSelect.value });
+  console.log('playRadio', { index, value: radioSelect.value });
   radioSelect.selectedIndex = index;
 
-  // Cancel any pending retry or loading timeout from previous call
   clearTimeout(retryTimer);
   clearTimeout(loadingTimer);
 
-  // New generation ID — stale callbacks will be ignored
   const playId = ++currentPlayId;
 
-  state = 'loading';
-
-  updateMediaSession();
-
-  errorNoiseInstance.stop();
-  loadingNoiseInstance.play();
-  showButton('stop');
-
-  loadingMsg.classList.remove('invisible');
-  errorMsg.classList.add('invisible');
+  setState('loading');
 
   player.pause();
   player.src = radioSelect.value;
   player.load();
 
-  // Timeout: if loading takes too long, force error
   loadingTimer = setTimeout(() => {
     if (playId !== currentPlayId) return;
     console.log('Loading timeout reached');
@@ -196,24 +222,14 @@ const playRadio = (index) => {
   }, LOADING_TIMEOUT_MS);
 
   player.play().then(() => {
-    if (playId !== currentPlayId) return; // stale, ignore
-
+    if (playId !== currentPlayId) return;
     clearTimeout(loadingTimer);
-    state = 'playing';
     retryCount = 0;
-    loadingMsg.classList.add('invisible');
-    errorMsg.classList.add('invisible');
-    showButton('pause');
-
-    loadingNoiseInstance.stop();
-
     localStorage.setItem('lastRadioIndex', index);
-
-    updateMediaSession();
+    setState('playing');
   }).catch(error => {
     if (error.name === 'AbortError') return;
-    if (playId !== currentPlayId) return; // stale, ignore
-
+    if (playId !== currentPlayId) return;
     clearTimeout(loadingTimer);
     handlePlayError(playId, index, error);
   });
@@ -222,28 +238,17 @@ const playRadio = (index) => {
 const handlePlayError = (playId, index, error) => {
   console.log('Error playing radio:', error);
 
-  state = 'error';
-
-  loadingMsg.classList.add('invisible');
-  showButton('stop');
-
-  // Auto-retry up to MAX_RETRIES times
   if (retryCount < MAX_RETRIES) {
     retryCount++;
     console.log(`Retry ${retryCount}/${MAX_RETRIES} for station index ${index}`);
-    // Keep loading sound playing through retry — no silence gap
+    setState('retrying');
     retryTimer = setTimeout(() => {
       if (playId !== currentPlayId) return;
       playRadio(index);
     }, 3000);
   } else {
-    // All retries exhausted — stop loading, show error and play error sound
-    loadingNoiseInstance.stop();
-    errorMsg.classList.remove('invisible');
-    errorNoiseInstance.play();
+    setState('error');
   }
-
-  updateMediaSession();
 };
 
 radioSelect.addEventListener('change', (e) => {
@@ -322,33 +327,26 @@ stopButton.addEventListener('click', stopRadio);
 
 player.addEventListener('play', (e) => {
   console.log('Event play', e);
-  if (state === 'loading' || state === 'error') {
-    showButton('stop');
-  } else {
-    showButton('pause');
-  }
   const now = performance.now();
   const timeDiff = now - lastPauseTime;
   if (lastPauseTime && timeDiff > 2000) {
     console.log('Restart radio after pause', { timeDiff, e });
+    lastPauseTime = null;
     player.pause();
     player.src = '';
     playRadio(radioSelect.selectedIndex);
+    return;
   }
-
   lastPauseTime = null;
-
+  if (state === 'paused') {
+    setState('playing');
+  }
 });
 
 player.addEventListener('pause', () => {
   console.log('Event pause');
   if (state === 'playing') {
-    state = 'paused';
-  }
-  if (state === 'loading' || state === 'error') {
-    showButton('stop');
-  } else {
-    showButton('play');
+    setState('paused');
   }
   lastPauseTime = performance.now();
 });
