@@ -106,8 +106,7 @@ function audioInstance(htmlElement) {
     .then(r => r.blob())
     .then(blob => {
       blobUrl = URL.createObjectURL(blob);
-      htmlElement.src = blobUrl;
-      htmlElement.load();
+      // Don't set src here — we only set it on play()
       console.log('Audio preloaded as blob:', initialSrc);
     })
     .catch(err => {
@@ -117,6 +116,7 @@ function audioInstance(htmlElement) {
   instance.play = () => {
     if (!isPlaying) {
       console.log('Play audio', initialSrc);
+      htmlElement.src = blobUrl || initialSrc;
       htmlElement.currentTime = 0;
       isPlaying = true;
   
@@ -133,7 +133,7 @@ function audioInstance(htmlElement) {
     if (isPlaying) {
       console.log('Stop audio', initialSrc);
       htmlElement.pause();
-      htmlElement.currentTime = 0;
+      htmlElement.src = '';
       isPlaying = false;
     }
   };
