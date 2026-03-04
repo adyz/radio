@@ -12,6 +12,7 @@ const errorMsg = document.getElementById('errorMsg');
 const prevButton = document.getElementById('prevButton');
 const playButton = document.getElementById('playButton');
 const pauseButton = document.getElementById('pauseButton');
+const stopButton = document.getElementById('stopButton');
 const nextButton = document.getElementById('nextButton');
 
 const posterImage = document.getElementById('posterImage');
@@ -136,6 +137,29 @@ function audioInstance(htmlElement) {
 const loadingNoiseInstance = audioInstance(loadingNoise);
 const errorNoiseInstance = audioInstance(errorNoise);
 
+const showButton = (which) => {
+  playButton.classList.toggle('hidden', which !== 'play');
+  pauseButton.classList.toggle('hidden', which !== 'pause');
+  stopButton.classList.toggle('hidden', which !== 'stop');
+};
+
+const stopRadio = () => {
+  console.log('stopRadio');
+  clearTimeout(retryTimer);
+  clearTimeout(loadingTimer);
+  currentPlayId++; // invalidate any pending callbacks
+  player.pause();
+  player.src = '';
+  loadingNoiseInstance.stop();
+  errorNoiseInstance.stop();
+  state = 'idle';
+  retryCount = 0;
+  loadingMsg.classList.add('invisible');
+  errorMsg.classList.add('invisible');
+  showButton('play');
+  updateMediaSession();
+};
+
 const playRadio = (index) => {
   console.log('playRadio', { index: index, value: radioSelect.value });
   radioSelect.selectedIndex = index;
@@ -153,7 +177,7 @@ const playRadio = (index) => {
 
   errorNoiseInstance.stop();
   loadingNoiseInstance.play();
-  [playButton, pauseButton].forEach(button => button.classList.add('opacity-50', 'cursor-not-allowed'));
+  showButton('stop');
 
   loadingMsg.classList.remove('invisible');
   errorMsg.classList.add('invisible');
@@ -179,7 +203,7 @@ const playRadio = (index) => {
     retryCount = 0;
     loadingMsg.classList.add('invisible');
     errorMsg.classList.add('invisible');
-    [playButton, pauseButton].forEach(button => button.classList.remove('opacity-50', 'cursor-not-allowed'));
+    showButton('pause');
 
     loadingNoiseInstance.stop();
 
@@ -201,7 +225,7 @@ const handlePlayError = (playId, index, error) => {
   state = 'error';
 
   loadingMsg.classList.add('invisible');
-  [playButton, pauseButton].forEach(button => button.classList.remove('opacity-50', 'cursor-not-allowed'));
+  showButton('stop');
 
   // Auto-retry up to MAX_RETRIES times
   if (retryCount < MAX_RETRIES) {
@@ -282,14 +306,10 @@ if (window.electronAPI) {
 // on pause, show the play button and hide the pause button
 
 playButton.addEventListener('click', () => {
-  if (player.paused) {
-    if (state === 'idle') {
-      // Nothing playing yet — start from selected (or first) station
-      playRadio(radioSelect.selectedIndex);
-    } else {
-      // Was paused — resume
-      player.play();
-    }
+  if (state === 'idle' || state === 'error') {
+    playRadio(radioSelect.selectedIndex);
+  } else if (state === 'paused') {
+    player.play();
   }
 });
 
@@ -297,11 +317,16 @@ pauseButton.addEventListener('click', () => {
   player.pause();
 });
 
+stopButton.addEventListener('click', stopRadio);
+
 
 player.addEventListener('play', (e) => {
   console.log('Event play', e);
-  playButton.classList.add('hidden');
-  pauseButton.classList.remove('hidden');
+  if (state === 'loading' || state === 'error') {
+    showButton('stop');
+  } else {
+    showButton('pause');
+  }
   const now = performance.now();
   const timeDiff = now - lastPauseTime;
   if (lastPauseTime && timeDiff > 2000) {
@@ -317,8 +342,14 @@ player.addEventListener('play', (e) => {
 
 player.addEventListener('pause', () => {
   console.log('Event pause');
-  playButton.classList.remove('hidden');
-  pauseButton.classList.add('hidden');
+  if (state === 'playing') {
+    state = 'paused';
+  }
+  if (state === 'loading' || state === 'error') {
+    showButton('stop');
+  } else {
+    showButton('play');
+  }
   lastPauseTime = performance.now();
 });
 

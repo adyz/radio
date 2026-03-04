@@ -327,9 +327,6 @@
   .transform {
     transform: var(--tw-rotate-x) var(--tw-rotate-y) var(--tw-rotate-z) var(--tw-skew-x) var(--tw-skew-y);
   }
-  .cursor-not-allowed {
-    cursor: not-allowed;
-  }
   .flex-col {
     flex-direction: column;
   }
@@ -478,9 +475,6 @@
   }
   .uppercase {
     text-transform: uppercase;
-  }
-  .opacity-50 {
-    opacity: 50%;
   }
   .shadow-2xl {
     --tw-shadow: 0 25px 50px -12px var(--tw-shadow-color, rgb(0 0 0 / 0.25));
