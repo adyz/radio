@@ -69,6 +69,8 @@ const updateMediaSession = () => {
         player.play();
       });
     }
+
+    navigator.mediaSession.playbackState = isLive ? 'playing' : 'none';
   }
 
   // update poster image
