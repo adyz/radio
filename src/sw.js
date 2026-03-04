@@ -28,26 +28,13 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Only serve precached sounds from cache when offline, everything else goes to network
+// Sounds: cache first — no need to hit network, they never change
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  const isCachedSound = url.pathname.endsWith('.mp3');
-
-  if (!isCachedSound) return;
-
-  console.log('SW fetch intercepted:', url.pathname);
+  if (!url.pathname.endsWith('.mp3')) return;
 
   event.respondWith(
-    fetch(event.request).catch(async () => {
-      console.log('SW: network failed, trying cache for:', url.pathname);
-      // ignoreVary + ignoreSearch: audio elements send Range/Vary headers that break exact match
-      const cached = await caches.match(event.request, { ignoreVary: true, ignoreSearch: true });
-      if (cached) {
-        console.log('SW: cache HIT for:', url.pathname);
-        return cached;
-      }
-      console.error('SW: cache MISS for:', url.pathname);
-      return new Response('Not found in cache', { status: 503 });
-    })
+    caches.match(event.request, { ignoreVary: true, ignoreSearch: true })
+      .then((cached) => cached || fetch(event.request))
   );
 });
