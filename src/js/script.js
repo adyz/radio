@@ -70,7 +70,7 @@ const updateMediaSession = () => {
       });
     }
 
-    navigator.mediaSession.playbackState = isLive ? 'playing' : 'none';
+    navigator.mediaSession.playbackState = isLive ? 'playing' : state === 'paused' ? 'paused' : 'none';
   }
 
   // update poster image
@@ -329,6 +329,7 @@ stopButton.addEventListener('click', stopRadio);
 
 player.addEventListener('play', (e) => {
   console.log('Event play', e);
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
   const now = performance.now();
   const timeDiff = now - lastPauseTime;
   if (lastPauseTime && timeDiff > 2000) {
@@ -347,6 +348,7 @@ player.addEventListener('play', (e) => {
 
 player.addEventListener('pause', () => {
   console.log('Event pause');
+  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
   if (state === 'playing') {
     setState('paused');
   }
