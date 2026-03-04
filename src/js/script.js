@@ -18,6 +18,8 @@ const posterImage = document.getElementById('posterImage');
 
 let hasError = false;
 let isLoading = false;
+let retryCount = 0;
+const MAX_RETRIES = 2;
 
 let lastPauseTime = null;
 
@@ -132,11 +134,14 @@ const playRadio = (index) => {
   player.play().then(() => {
     isLoading = false;
     hasError = false;
+    retryCount = 0;
     loadingMsg.classList.add('invisible');
     errorMsg.classList.add('invisible');
     [playButton, pauseButton].forEach(button => button.classList.remove('opacity-50', 'cursor-not-allowed'));
 
     loadingNoiseInstance.stop();
+
+    localStorage.setItem('lastRadioIndex', index);
 
     updateMediaSession();
   }).catch(error => {
@@ -157,6 +162,13 @@ const playRadio = (index) => {
     loadingNoiseInstance.stop();
     errorNoiseInstance.play();
     updateMediaSession();
+
+    // Auto-retry up to MAX_RETRIES times
+    if (retryCount < MAX_RETRIES) {
+      retryCount++;
+      console.log(`Retry ${retryCount}/${MAX_RETRIES} for station index ${radioSelect.selectedIndex}`);
+      setTimeout(() => playRadio(radioSelect.selectedIndex), 3000);
+    }
   });
 };
 
@@ -295,6 +307,12 @@ updateThemeColor();
 // Ascultăm schimbările în preferințele sistemului
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeColor);
 
+
+// Restore last played station
+const lastRadioIndex = localStorage.getItem('lastRadioIndex');
+if (lastRadioIndex !== null) {
+  playRadio(parseInt(lastRadioIndex, 10));
+}
 
 // new selector
 const new_selector_open_button = document.getElementById('new_selector__button');
