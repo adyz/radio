@@ -18,7 +18,7 @@ const posterImage = document.getElementById('posterImage');
 
 let state = 'idle'; // 'idle' | 'loading' | 'playing' | 'paused' | 'error'
 let retryCount = 0;
-const MAX_RETRIES = 2;
+const MAX_RETRIES = 1;
 const LOADING_TIMEOUT_MS = 10000;
 
 let currentPlayId = 0;
@@ -87,11 +87,19 @@ function audioInstance(htmlElement) {
   const instance = {};
   instance.src = initialSrc;
 
+  // Preload: set src immediately so the browser starts buffering
+  htmlElement.src = initialSrc;
+  htmlElement.load();
+
   instance.play = () => {
     if (!isPlaying) {
       console.log('Play audio', { htmlSrc: htmlElement.src, instanceSrc: instance.src });
-  
-      htmlElement.src = instance.src;
+
+      // Only set src if it changed (avoid re-download)
+      if (htmlElement.src !== instance.src) {
+        htmlElement.src = instance.src;
+      }
+      htmlElement.currentTime = 0;
       isPlaying = true;
   
       htmlElement.play().catch((error) => {
@@ -107,7 +115,8 @@ function audioInstance(htmlElement) {
     if (isPlaying) {
       console.log('Stop audio', { htmlSrc: htmlElement.src, instanceSrc: instance.src });
       htmlElement.pause();
-      htmlElement.src = '';
+      htmlElement.currentTime = 0;
+      // Don't clear src — keep the buffer so it plays instantly next time
       isPlaying = false;
     }
   };
