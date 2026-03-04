@@ -282,9 +282,18 @@ worker.onmessage = () => {
 };
 
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('./js/sw.js')
-    .then(reg => console.log('Service Worker registered!'))
+  navigator.serviceWorker.register('./sw.js')
+    .then(reg => {
+      console.log('Service Worker registered!');
+      // Force check for updates immediately
+      reg.update();
+    })
     .catch(err => console.error('Service Worker registration failed:', err));
+
+  // When a new SW takes over, reload the page so no stale cache is served
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    window.location.reload();
+  });
 }
 
 
@@ -308,10 +317,10 @@ updateThemeColor();
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeColor);
 
 
-// Restore last played station
+// Restore last played station selection (without auto-play, browsers block it)
 const lastRadioIndex = localStorage.getItem('lastRadioIndex');
 if (lastRadioIndex !== null) {
-  playRadio(parseInt(lastRadioIndex, 10));
+  radioSelect.selectedIndex = parseInt(lastRadioIndex, 10);
 }
 
 // new selector

@@ -61,8 +61,9 @@ async function copyAssets() {
         await fs.copy(path.join(srcFolder, "images"), path.join(distFolder, "images"));
         await fs.copy(path.join(srcFolder, "sounds"), path.join(distFolder, "sounds"));
         await fs.copy(path.join(srcFolder, "manifest.json"), path.join(distFolder, "manifest.json"));
+        await fs.copy(path.join(srcFolder, "sw.js"), path.join(distFolder, "sw.js"));
         await fs.copy(path.join(srcFolder, "css"), path.join(distFolder, "css"));
-        console.log("✅ Copied images, sounds, and manifest.json");
+        console.log("✅ Copied images, sounds, sw.js, and manifest.json");
     } catch (error) {
         console.error("❌ Error copying assets:", error);
     }
