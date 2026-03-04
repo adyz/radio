@@ -71,6 +71,12 @@ const updateMediaSession = () => {
     }
 
     navigator.mediaSession.playbackState = isLive ? 'playing' : state === 'paused' ? 'paused' : 'none';
+
+    // Live streams: clear position state so iOS shows "LIVE" indicator
+    // Finite audio (loading/error sounds) can confuse iOS into showing a progress bar
+    if (isLive || state === 'paused') {
+      navigator.mediaSession.setPositionState();
+    }
   }
 
   // update poster image
