@@ -83,22 +83,31 @@ const updateMediaSession = () => {
 function audioInstance(htmlElement) {
   let initialSrc = htmlElement.querySelector('source').src;
   let isPlaying = false;
+  let blobUrl = null;
 
   const instance = {};
   instance.src = initialSrc;
 
-  // Preload: set src immediately so the browser starts buffering
+  // Set src immediately so it works right away
   htmlElement.src = initialSrc;
   htmlElement.load();
 
+  // Then upgrade to blob URL in background — immune to network issues once loaded
+  fetch(initialSrc)
+    .then(r => r.blob())
+    .then(blob => {
+      blobUrl = URL.createObjectURL(blob);
+      htmlElement.src = blobUrl;
+      htmlElement.load();
+      console.log('Audio preloaded as blob:', initialSrc);
+    })
+    .catch(err => {
+      console.warn('Audio blob preload failed, using network src:', initialSrc, err);
+    });
+
   instance.play = () => {
     if (!isPlaying) {
-      console.log('Play audio', { htmlSrc: htmlElement.src, instanceSrc: instance.src });
-
-      // Only set src if it changed (avoid re-download)
-      if (htmlElement.src !== instance.src) {
-        htmlElement.src = instance.src;
-      }
+      console.log('Play audio', initialSrc);
       htmlElement.currentTime = 0;
       isPlaying = true;
   
@@ -113,10 +122,9 @@ function audioInstance(htmlElement) {
 
   instance.stop = () => {
     if (isPlaying) {
-      console.log('Stop audio', { htmlSrc: htmlElement.src, instanceSrc: instance.src });
+      console.log('Stop audio', initialSrc);
       htmlElement.pause();
       htmlElement.currentTime = 0;
-      // Don't clear src — keep the buffer so it plays instantly next time
       isPlaying = false;
     }
   };
@@ -195,19 +203,18 @@ const handlePlayError = (playId, index, error) => {
   loadingMsg.classList.add('invisible');
   [playButton, pauseButton].forEach(button => button.classList.remove('opacity-50', 'cursor-not-allowed'));
 
-  loadingNoiseInstance.stop();
-
   // Auto-retry up to MAX_RETRIES times
   if (retryCount < MAX_RETRIES) {
     retryCount++;
     console.log(`Retry ${retryCount}/${MAX_RETRIES} for station index ${index}`);
-    // Don't show error UI or play error sound during retries — just retry silently
+    // Keep loading sound playing through retry — no silence gap
     retryTimer = setTimeout(() => {
       if (playId !== currentPlayId) return;
       playRadio(index);
     }, 3000);
   } else {
-    // All retries exhausted — now show error and play error sound
+    // All retries exhausted — stop loading, show error and play error sound
+    loadingNoiseInstance.stop();
     errorMsg.classList.remove('invisible');
     errorNoiseInstance.play();
   }

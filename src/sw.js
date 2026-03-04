@@ -28,10 +28,12 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Sounds: cache first — no need to hit network, they never change
+// Sounds: cache first — only for local mp3s, ignore external streams
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  if (!url.pathname.endsWith('.mp3')) return;
+
+  // Only handle local .mp3 files, not external radio streams
+  if (!url.pathname.endsWith('.mp3') || url.origin !== self.location.origin) return;
 
   event.respondWith(
     caches.match(event.request, { ignoreVary: true, ignoreSearch: true })
