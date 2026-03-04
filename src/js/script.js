@@ -16,10 +16,14 @@ const nextButton = document.getElementById('nextButton');
 
 const posterImage = document.getElementById('posterImage');
 
-let hasError = false;
-let isLoading = false;
+let state = 'idle'; // 'idle' | 'loading' | 'playing' | 'paused' | 'error'
 let retryCount = 0;
 const MAX_RETRIES = 2;
+const LOADING_TIMEOUT_MS = 10000;
+
+let currentPlayId = 0;
+let retryTimer = null;
+let loadingTimer = null;
 
 let lastPauseTime = null;
 
@@ -33,12 +37,16 @@ posterImage.querySelector('img').src = cloudinaryImageUrl('Coji Radio Player');
 
 const updateMediaSession = () => {
   const title = radioSelect.options[radioSelect.selectedIndex].text;
+  const isLoading = state === 'loading';
+  const hasError = state === 'error';
+  const isLive = state === 'playing';
+
   if ('mediaSession' in navigator) {
 
     navigator.mediaSession.metadata = new MediaMetadata({
       title: isLoading ? `Se încarcă...${title}` : hasError ? `Eroare la încărcarea ${title}` : title,
       artist: `Coji Radio Player | ${title}`,
-      artwork: [{ src: cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, title && !isLoading && !hasError ? true : false) }]
+      artwork: [{ src: cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, isLive) }]
     });
     
     navigator.mediaSession.setActionHandler('previoustrack', () => {
@@ -63,10 +71,10 @@ const updateMediaSession = () => {
   }
 
   // update poster image
-  posterImage.querySelector('img').src = cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, title && !isLoading && !hasError ? true : false);
+  posterImage.querySelector('img').src = cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, isLive);
 
   // update document title
-  document.title = `${isLoading ? "⏳" : ''} ${hasError ? '❤️‍🩹' : ''} ${!isLoading && !hasError ? '🔴' : ''} ${isLoading ? `Se incarca ${title}` : hasError ? 'Eroare' : title}`;
+  document.title = `${isLoading ? "⏳" : ''} ${hasError ? '❤️‍🩹' : ''} ${isLive ? '🔴' : ''} ${isLoading ? `Se incarca ${title}` : hasError ? 'Eroare' : title}`;
 
   // update loading message
   loadingMsg.innerText = isLoading ? `Se incarca ${title}...` : '';
@@ -115,8 +123,14 @@ const playRadio = (index) => {
   console.log('playRadio', { index: index, value: radioSelect.value });
   radioSelect.selectedIndex = index;
 
-  isLoading = true;
-  hasError = false;
+  // Cancel any pending retry or loading timeout from previous call
+  clearTimeout(retryTimer);
+  clearTimeout(loadingTimer);
+
+  // New generation ID — stale callbacks will be ignored
+  const playId = ++currentPlayId;
+
+  state = 'loading';
 
   updateMediaSession();
 
@@ -131,9 +145,20 @@ const playRadio = (index) => {
   player.src = radioSelect.value;
   player.load();
 
+  // Timeout: if loading takes too long, force error
+  loadingTimer = setTimeout(() => {
+    if (playId !== currentPlayId) return;
+    console.log('Loading timeout reached');
+    player.pause();
+    player.src = '';
+    handlePlayError(playId, index, new Error('Loading timeout'));
+  }, LOADING_TIMEOUT_MS);
+
   player.play().then(() => {
-    isLoading = false;
-    hasError = false;
+    if (playId !== currentPlayId) return; // stale, ignore
+
+    clearTimeout(loadingTimer);
+    state = 'playing';
     retryCount = 0;
     loadingMsg.classList.add('invisible');
     errorMsg.classList.add('invisible');
@@ -145,31 +170,40 @@ const playRadio = (index) => {
 
     updateMediaSession();
   }).catch(error => {
+    if (error.name === 'AbortError') return;
+    if (playId !== currentPlayId) return; // stale, ignore
 
-    if (error.name === 'AbortError') {
-      return;
-    }
-
-    console.log('Error playing radio:', error);
-
-    isLoading = false;
-    hasError = true;
-
-    loadingMsg.classList.add('invisible');
-    errorMsg.classList.remove('invisible');
-    [playButton, pauseButton].forEach(button => button.classList.remove('opacity-50', 'cursor-not-allowed'));
-
-    loadingNoiseInstance.stop();
-    errorNoiseInstance.play();
-    updateMediaSession();
-
-    // Auto-retry up to MAX_RETRIES times
-    if (retryCount < MAX_RETRIES) {
-      retryCount++;
-      console.log(`Retry ${retryCount}/${MAX_RETRIES} for station index ${radioSelect.selectedIndex}`);
-      setTimeout(() => playRadio(radioSelect.selectedIndex), 3000);
-    }
+    clearTimeout(loadingTimer);
+    handlePlayError(playId, index, error);
   });
+};
+
+const handlePlayError = (playId, index, error) => {
+  console.log('Error playing radio:', error);
+
+  state = 'error';
+
+  loadingMsg.classList.add('invisible');
+  [playButton, pauseButton].forEach(button => button.classList.remove('opacity-50', 'cursor-not-allowed'));
+
+  loadingNoiseInstance.stop();
+
+  // Auto-retry up to MAX_RETRIES times
+  if (retryCount < MAX_RETRIES) {
+    retryCount++;
+    console.log(`Retry ${retryCount}/${MAX_RETRIES} for station index ${index}`);
+    // Don't show error UI or play error sound during retries — just retry silently
+    retryTimer = setTimeout(() => {
+      if (playId !== currentPlayId) return;
+      playRadio(index);
+    }, 3000);
+  } else {
+    // All retries exhausted — now show error and play error sound
+    errorMsg.classList.remove('invisible');
+    errorNoiseInstance.play();
+  }
+
+  updateMediaSession();
 };
 
 radioSelect.addEventListener('change', (e) => {
@@ -282,6 +316,17 @@ worker.onmessage = () => {
 };
 
 if ('serviceWorker' in navigator) {
+  // Unregister any stale SW from old paths (e.g. /js/sw.js)
+  navigator.serviceWorker.getRegistrations().then(registrations => {
+    registrations.forEach(reg => {
+      const swUrl = reg.active?.scriptURL || '';
+      if (!swUrl.endsWith('/sw.js') || swUrl.endsWith('/js/sw.js')) {
+        console.log('Unregistering stale SW:', swUrl);
+        reg.unregister();
+      }
+    });
+  });
+
   navigator.serviceWorker.register('./sw.js')
     .then(reg => {
       console.log('Service Worker registered!');
