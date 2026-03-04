@@ -276,9 +276,11 @@ if (window.electronAPI) {
 
 playButton.addEventListener('click', () => {
   if (player.paused) {
-    if (radioSelect.selectedIndex === 0) {
-      playRadio(0);
+    if (state === 'idle') {
+      // Nothing playing yet — start from selected (or first) station
+      playRadio(radioSelect.selectedIndex);
     } else {
+      // Was paused — resume
       player.play();
     }
   }
