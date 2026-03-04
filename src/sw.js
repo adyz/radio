@@ -1,42 +1,17 @@
-const CACHE_NAME = 'radio-player-v3';
+// Service Worker — kept minimal
+// Audio sounds are handled via blob URLs in script.js
+// SW is registered for PWA install support and future use
 
-const PRECACHE_ASSETS = [
-  '/sounds/loading-low.mp3',
-  '/sounds/error-low.mp3',
-];
-
-// Cache critical assets on install
-self.addEventListener('install', (event) => {
-  console.log('SW: installing, caching:', PRECACHE_ASSETS);
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.addAll(PRECACHE_ASSETS))
-      .then(() => console.log('SW: precache OK'))
-      .catch((err) => console.error('SW: precache FAILED', err))
-  );
+self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
-// Clean old caches on activate
 self.addEventListener('activate', (event) => {
-  console.log('SW: activated');
+  // Clean any old caches from previous versions
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+      Promise.all(keys.map((k) => caches.delete(k)))
     )
   );
   self.clients.claim();
-});
-
-// Sounds: cache first — only for local mp3s, ignore external streams
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-
-  // Only handle local .mp3 files, not external radio streams
-  if (!url.pathname.endsWith('.mp3') || url.origin !== self.location.origin) return;
-
-  event.respondWith(
-    caches.match(event.request, { ignoreVary: true, ignoreSearch: true })
-      .then((cached) => cached || fetch(event.request))
-  );
 });
