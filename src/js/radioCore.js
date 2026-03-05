@@ -9,6 +9,7 @@ import { createStateMachine } from './stateMachine.js';
 
 export const MAX_RETRIES = 1;
 export const LOADING_TIMEOUT_MS = 6000;
+export const RECOVERY_DELAY_MS = 10000;
 
 const STATE_FX = {
   idle:       { button: 'play',  loading: 'stop',  error: 'stop',  loadingMsg: false, errorMsg: false },
@@ -207,12 +208,12 @@ export function createRadioCore(deps) {
     }
   }
 
-  // Schedule a silent recovery attempt after 10s
+  // Schedule a silent recovery attempt after RECOVERY_DELAY_MS
   function scheduleRecovery() {
     _clearTimeout(timers.recovery);
     timers.recovery = _setTimeout(() => {
       retryFromError();
-    }, 10000);
+    }, RECOVERY_DELAY_MS);
   }
 
   // Silent recovery: uses the state machine ('recovering' state).
@@ -220,6 +221,9 @@ export function createRadioCore(deps) {
   function retryFromError() {
     const s = getState();
     if (s !== 'error' && s !== 'recovering') return;
+
+    _clearTimeout(timers.loading);
+    _clearTimeout(timers.recovery);
 
     const index = getSelectedIndex();
     const playId = ++currentPlayId;
