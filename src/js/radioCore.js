@@ -84,8 +84,9 @@ export function createRadioCore(deps) {
 
     setState('loading');
 
-    // Don't call playerPause() here — setting a new src implicitly stops the old stream.
-    // Explicit pause fires a 'pause' event that makes the OS drop our media session.
+    // Pause after setState('loading') so the native 'pause' event is ignored
+    // (script.js skips playbackState='paused' when state is loading/retrying)
+    playerPause();
     playerSetSrc(getStationUrl(index));
     playerLoad();
 
