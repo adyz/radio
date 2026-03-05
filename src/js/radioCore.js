@@ -222,6 +222,12 @@ export function createRadioCore(deps) {
     const s = getState();
     if (s !== 'error' && s !== 'recovering') return;
 
+    // No point trying without connectivity — wait for 'online' event
+    if (!isOnline()) {
+      scheduleRecovery();
+      return;
+    }
+
     _clearTimeout(timers.loading);
     _clearTimeout(timers.recovery);
 
