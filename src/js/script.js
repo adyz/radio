@@ -184,7 +184,11 @@ player.addEventListener('play', () => {
 });
 
 player.addEventListener('pause', () => {
-  if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+  const s = core.getState();
+  // Don't signal 'paused' during loading/retrying — OS would hand over media control to another app
+  if ('mediaSession' in navigator && s !== 'loading' && s !== 'retrying') {
+    navigator.mediaSession.playbackState = 'paused';
+  }
   core.onPlayerPause();
 });
 
