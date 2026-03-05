@@ -32,7 +32,7 @@ function cloudinaryImageUrl(text, live = false) {
 }
 
 // Pre-cache status images so they're available offline
-['Eroare', 'Se încarcă...'].forEach(text => {
+['Eroare', 'Se încarcă...', 'Coji Radio Player'].forEach(text => {
   const img = new Image();
   img.src = cloudinaryImageUrl(text);
 });
