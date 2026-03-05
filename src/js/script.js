@@ -31,6 +31,12 @@ function cloudinaryImageUrl(text, live = false) {
   return `https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:${text}/${live ? url_live : url_non_live}`;
 }
 
+// Pre-cache status images so they're available offline
+['Eroare', 'Se încarcă...'].forEach(text => {
+  const img = new Image();
+  img.src = cloudinaryImageUrl(text);
+});
+
 // Restore last station before anything reads selectedIndex
 const hasRestoredStation = localStorage.getItem('lastRadioIndex') !== null;
 if (hasRestoredStation) {
@@ -216,6 +222,16 @@ player.addEventListener('pause', () => {
     navigator.mediaSession.playbackState = 'paused';
   }
   core.onPlayerPause();
+});
+
+// Stream failure during playback (lost WiFi, server died, etc.)
+player.addEventListener('error', () => core.onPlayerError());
+player.addEventListener('stalled', () => {
+  // 'stalled' fires when data stops arriving — give it a few seconds before treating as error
+  const stalledTimeout = setTimeout(() => {
+    if (core.getState() === 'playing') core.onPlayerError();
+  }, 5000);
+  player.addEventListener('playing', () => clearTimeout(stalledTimeout), { once: true });
 });
 
 // Prev / Next

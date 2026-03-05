@@ -182,6 +182,15 @@ export function createRadioCore(deps) {
     }
   }
 
+  // Called from native player 'error' event (e.g. stream dies mid-playback)
+  function onPlayerError() {
+    const s = getState();
+    if (s === 'playing' || s === 'paused') {
+      lastPauseTime = null;
+      handlePlayError(currentPlayId, getSelectedIndex(), new Error('Stream error'));
+    }
+  }
+
   function onPlayButtonClick() {
     const s = getState();
     if (s === 'idle' || s === 'error') {
@@ -202,6 +211,7 @@ export function createRadioCore(deps) {
     nextRadio,
     onPlayerPlay,
     onPlayerPause,
+    onPlayerError,
     onPlayButtonClick,
     _getPlayId: () => currentPlayId,
     _getRetryCount: () => retryCount,
