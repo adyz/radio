@@ -1,6 +1,14 @@
+/**
+ * script-beta.js — uses radioCore.js state machine
+ * Drop-in replacement for script.js. To switch:
+ *   <script type="module" src="./js/script-beta.js"></script>
+ */
+
+import { createRadioCore } from './radioCore.js';
 
 document.addEventListener("touchstart", function () { }, true);
 
+// --- DOM refs ---
 
 const radioSelect = document.getElementById('radioSelect');
 const player = document.getElementById('player');
@@ -17,16 +25,7 @@ const nextButton = document.getElementById('nextButton');
 
 const posterImage = document.getElementById('posterImage');
 
-let state = 'idle'; // 'idle' | 'loading' | 'playing' | 'paused' | 'retrying' | 'error'
-let retryCount = 0;
-const MAX_RETRIES = 1;
-const LOADING_TIMEOUT_MS = 6000;
-
-let currentPlayId = 0;
-let retryTimer = null;
-let loadingTimer = null;
-
-let lastPauseTime = null;
+// --- Cloudinary ---
 
 function cloudinaryImageUrl(text, live = false) {
   const url_non_live = 'nndti4oybhdzggf8epvh';
@@ -36,114 +35,51 @@ function cloudinaryImageUrl(text, live = false) {
 
 posterImage.querySelector('img').src = cloudinaryImageUrl('Coji Radio Player');
 
-const updateMediaSession = () => {
-  const title = radioSelect.options[radioSelect.selectedIndex].text;
-  const isLoading = state === 'loading' || state === 'retrying';
-  const hasError = state === 'error';
-  const isLive = state === 'playing';
-
-  if ('mediaSession' in navigator) {
-
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: isLoading ? `Se încarcă...${title}` : hasError ? `Eroare la încărcarea ${title}` : title,
-      artist: `Coji Radio Player | ${title}`,
-      artwork: [{ src: cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, isLive) }]
-    });
-    
-    navigator.mediaSession.setActionHandler('previoustrack', () => {
-      console.log('prev by media session');
-      prevRadio()
-    });
-    navigator.mediaSession.setActionHandler('nexttrack', () => {
-      console.log('next by media session');
-      nextRadio()
-    });
-
-    if(!isLoading && !hasError) {
-      navigator.mediaSession.setActionHandler('pause', () => {
-        console.log('paused by media session');
-        player.pause()
-      });
-      navigator.mediaSession.setActionHandler('play', () => {
-        console.log('played by media session');
-        player.play();
-      });
-    }
-
-    navigator.mediaSession.playbackState = isLive ? 'playing' : state === 'paused' ? 'paused' : 'none';
-
-    // Live streams: clear position state so iOS shows "LIVE" indicator
-    // Finite audio (loading/error sounds) can confuse iOS into showing a progress bar
-    if (isLive || state === 'paused') {
-      navigator.mediaSession.setPositionState();
-    }
-  }
-
-  // update poster image
-  posterImage.querySelector('img').src = cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, isLive);
-
-  // update document title
-  document.title = `${isLoading ? "⏳" : ''} ${hasError ? '❤️‍🩹' : ''} ${isLive ? '🔴' : ''} ${isLoading ? `Se incarca ${title}` : hasError ? 'Eroare' : title}`;
-
-  // update loading message
-  loadingMsg.innerText = isLoading ? `Se incarca ${title}...` : '';
-};
+// --- Audio instances (blob preload) ---
 
 function audioInstance(htmlElement) {
   let initialSrc = htmlElement.querySelector('source').src;
   let isPlaying = false;
   let blobUrl = null;
 
-  const instance = {};
-  instance.src = initialSrc;
-
-  // Set src immediately so it works right away
   htmlElement.src = initialSrc;
   htmlElement.load();
 
-  // Then upgrade to blob URL in background — immune to network issues once loaded
   fetch(initialSrc)
     .then(r => r.blob())
     .then(blob => {
       blobUrl = URL.createObjectURL(blob);
-      // Don't set src here — we only set it on play()
-      console.log('Audio preloaded as blob:', initialSrc);
     })
     .catch(err => {
       console.warn('Audio blob preload failed, using network src:', initialSrc, err);
     });
 
-  instance.play = () => {
-    if (!isPlaying) {
-      console.log('Play audio', initialSrc);
-      htmlElement.src = blobUrl || initialSrc;
-      htmlElement.currentTime = 0;
-      isPlaying = true;
-  
-      htmlElement.play().catch((error) => {
-        if (error.name !== 'AbortError') {
-          console.error('Error playing audio:', error);
-        }
+  return {
+    play() {
+      if (!isPlaying) {
+        htmlElement.src = blobUrl || initialSrc;
+        htmlElement.currentTime = 0;
+        isPlaying = true;
+        htmlElement.play().catch((error) => {
+          if (error.name !== 'AbortError') console.error('Error playing audio:', error);
+          isPlaying = false;
+        });
+      }
+    },
+    stop() {
+      if (isPlaying) {
+        htmlElement.pause();
+        htmlElement.src = '';
         isPlaying = false;
-      });
-    }
+      }
+    },
   };
-
-  instance.stop = () => {
-    if (isPlaying) {
-      console.log('Stop audio', initialSrc);
-      htmlElement.pause();
-      htmlElement.src = '';
-      isPlaying = false;
-    }
-  };
-
-  return instance;
 }
-
 
 const loadingNoiseInstance = audioInstance(loadingNoise);
 const errorNoiseInstance = audioInstance(errorNoise);
+
+// --- UI helpers ---
 
 const showButton = (which) => {
   playButton.classList.toggle('hidden', which !== 'play');
@@ -151,327 +87,184 @@ const showButton = (which) => {
   stopButton.classList.toggle('hidden', which !== 'stop');
 };
 
-const setState = (newState) => {
-  const prev = state;
-  state = newState;
-  console.log(`State: ${prev} → ${newState}`);
+const updateMediaSession = (newState) => {
+  const title = radioSelect.options[radioSelect.selectedIndex].text;
+  const isLoading = newState === 'loading' || newState === 'retrying';
+  const hasError = newState === 'error';
+  const isLive = newState === 'playing';
 
-  // Button visibility
-  switch (newState) {
-    case 'idle':
-    case 'paused':
-      showButton('play');
-      break;
-    case 'playing':
-      showButton('pause');
-      break;
-    case 'loading':
-    case 'retrying':
-    case 'error':
-      showButton('stop');
-      break;
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: isLoading ? `Se încarcă...${title}` : hasError ? `Eroare la încărcarea ${title}` : title,
+      artist: `Coji Radio Player | ${title}`,
+      artwork: [{ src: cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, isLive) }]
+    });
+
+    navigator.mediaSession.setActionHandler('previoustrack', () => core.prevRadio());
+    navigator.mediaSession.setActionHandler('nexttrack', () => core.nextRadio());
+
+    if (!isLoading && !hasError) {
+      navigator.mediaSession.setActionHandler('pause', () => core.pauseRadio());
+      navigator.mediaSession.setActionHandler('play', () => core.resumeRadio());
+    }
+
+    navigator.mediaSession.playbackState = isLive ? 'playing' : newState === 'paused' ? 'paused' : 'none';
+
+    if (isLive || newState === 'paused') {
+      navigator.mediaSession.setPositionState();
+    }
   }
 
-  // Sounds
-  if (newState === 'loading') {
-    errorNoiseInstance.stop();
-    loadingNoiseInstance.play();
-  } else if (newState === 'retrying') {
-    // Keep loading sound playing through retry — no silence gap
-    errorNoiseInstance.stop();
-  } else if (newState === 'error') {
-    loadingNoiseInstance.stop();
-    errorNoiseInstance.play();
-  } else {
-    // idle, playing, paused
-    loadingNoiseInstance.stop();
-    errorNoiseInstance.stop();
-  }
-
-  // Messages
-  loadingMsg.classList.toggle('invisible', newState !== 'loading');
-  errorMsg.classList.toggle('invisible', newState !== 'error');
-
-  updateMediaSession();
+  posterImage.querySelector('img').src = cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, isLive);
+  document.title = `${isLoading ? "⏳" : ''} ${hasError ? '❤️‍🩹' : ''} ${isLive ? '🔴' : ''} ${isLoading ? `Se incarca ${title}` : hasError ? 'Eroare' : title}`;
+  loadingMsg.innerText = isLoading ? `Se incarca ${title}...` : '';
 };
 
-const stopRadio = () => {
-  console.log('stopRadio');
-  clearTimeout(retryTimer);
-  clearTimeout(loadingTimer);
-  currentPlayId++;
-  retryCount = 0;
-  setState('idle');
-  player.pause();
-  player.src = '';
-};
+// --- Create core (state machine) ---
 
-const playRadio = (index) => {
-  console.log('playRadio', { index, value: radioSelect.value });
-  radioSelect.selectedIndex = index;
+const core = createRadioCore({
+  getStationUrl:    (i) => radioSelect.options[i].value,
+  getStationCount:  () => radioSelect.options.length,
+  getSelectedIndex: () => radioSelect.selectedIndex,
+  setSelectedIndex: (i) => { radioSelect.selectedIndex = i; },
+  playerPlay:       () => player.play(),
+  playerPause:      () => player.pause(),
+  playerSetSrc:     (url) => { player.src = url; },
+  playerLoad:       () => player.load(),
+  playerIsPaused:   () => player.paused,
+  loadingSound:     loadingNoiseInstance,
+  errorSound:       errorNoiseInstance,
+  showButton,
+  setLoadingMsg:    (v) => loadingMsg.classList.toggle('invisible', !v),
+  setErrorMsg:      (v) => errorMsg.classList.toggle('invisible', !v),
+  updateMediaSession,
+  saveLastIndex:    (i) => localStorage.setItem('lastRadioIndex', i),
+  setTimeout,
+  clearTimeout,
+  performanceNow:   () => performance.now(),
+});
 
-  clearTimeout(retryTimer);
-  clearTimeout(loadingTimer);
-
-  const playId = ++currentPlayId;
-
-  setState('loading');
-
-  player.pause();
-  player.src = radioSelect.value;
-  player.load();
-
-  loadingTimer = setTimeout(() => {
-    if (playId !== currentPlayId) return;
-    console.log('Loading timeout reached');
-    player.pause();
-    player.src = '';
-    handlePlayError(playId, index, new Error('Loading timeout'));
-  }, LOADING_TIMEOUT_MS);
-
-  player.play().then(() => {
-    if (playId !== currentPlayId) return;
-    clearTimeout(loadingTimer);
-    retryCount = 0;
-    localStorage.setItem('lastRadioIndex', index);
-    setState('playing');
-  }).catch(error => {
-    if (error.name === 'AbortError') return;
-    if (playId !== currentPlayId) return;
-    clearTimeout(loadingTimer);
-    handlePlayError(playId, index, error);
-  });
-};
-
-const handlePlayError = (playId, index, error) => {
-  console.log('Error playing radio:', error);
-
-  if (retryCount < MAX_RETRIES) {
-    retryCount++;
-    console.log(`Retry ${retryCount}/${MAX_RETRIES} for station index ${index}`);
-    setState('retrying');
-    retryTimer = setTimeout(() => {
-      if (playId !== currentPlayId) return;
-      playRadio(index);
-    }, 3000);
-  } else {
-    setState('error');
-  }
-};
+// --- Event listeners ---
 
 radioSelect.addEventListener('change', (e) => {
   if (e.target.value) {
-    playRadio(radioSelect.selectedIndex);
+    core.playRadio(radioSelect.selectedIndex);
   } else {
-    player.pause();
-    player.src = '';
+    core.stopRadio();
   }
 });
 
-const prevRadio = () => {
-  console.log('prevRadio', radioSelect.selectedIndex);
-  playRadio(radioSelect.selectedIndex === 0 ? radioSelect.options.length - 1 : radioSelect.selectedIndex - 1);
-};
-
-const nextRadio = () => {
-  console.log('nextRadio', radioSelect.selectedIndex);  
-  playRadio(radioSelect.selectedIndex === radioSelect.options.length - 1 ? 0 : radioSelect.selectedIndex + 1);
-};
-
+// Electron
 if (window.electronAPI) {
   window.electronAPI.onMediaControl((command) => {
-    console.log("Comandă media primită:", command);
-
-
     if (command === "playpause") {
-      if (player.paused) {
-        player.play();
-      } else {
-        player.pause();
-      }
+      core.togglePlayPause();
     } else if (command === "next") {
-      // Implementare pentru trecerea la următoarea melodie
-      console.log("Next track (nu este implementat)");
-      nextRadio();
+      core.nextRadio();
     } else if (command === "previous") {
-      // Implementare pentru melodia anterioară
-      console.log("Previous track (nu este implementat)");
-      prevRadio();
+      core.prevRadio();
     }
   });
 
-  // **Monitorizează starea audio și o trimite la Electron**
   document.addEventListener("DOMContentLoaded", () => {
-    function updatePlaybackState() {
-      window.electronAPI.updatePlaybackState(!player.paused);
-    }
-
+    const updatePlaybackState = () =>
+      window.electronAPI.updatePlaybackState(core.getState() === 'playing');
     player.addEventListener("play", updatePlaybackState);
     player.addEventListener("pause", updatePlaybackState);
   });
-
 }
 
+// Buttons
+playButton.addEventListener('click', () => core.onPlayButtonClick());
+pauseButton.addEventListener('click', () => core.pauseRadio());
+stopButton.addEventListener('click', () => core.stopRadio());
 
-// play button logic
-// on play, if no radio is selected, play the first one and make it selected
-// also hide the play button and show the pause button
-// on pause, show the play button and hide the pause button
-
-playButton.addEventListener('click', () => {
-  if (state === 'idle' || state === 'error') {
-    playRadio(radioSelect.selectedIndex);
-  } else if (state === 'paused') {
-    player.play();
-  }
-});
-
-pauseButton.addEventListener('click', () => {
-  player.pause();
-});
-
-stopButton.addEventListener('click', stopRadio);
-
-
-player.addEventListener('play', (e) => {
-  console.log('Event play', e);
+// Native audio events → core (iOS needs the mediaSession.playbackState override)
+player.addEventListener('play', () => {
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
-  const now = performance.now();
-  const timeDiff = now - lastPauseTime;
-  if (lastPauseTime && timeDiff > 2000) {
-    console.log('Restart radio after pause', { timeDiff, e });
-    lastPauseTime = null;
-    player.pause();
-    player.src = '';
-    playRadio(radioSelect.selectedIndex);
-    return;
-  }
-  lastPauseTime = null;
-  if (state === 'paused') {
-    setState('playing');
-  }
+  core.onPlayerPlay();
 });
 
 player.addEventListener('pause', () => {
-  console.log('Event pause');
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
-  if (state === 'playing') {
-    setState('paused');
-  }
-  lastPauseTime = performance.now();
+  core.onPlayerPause();
 });
 
+// Prev / Next
+prevButton.addEventListener('click', () => core.prevRadio());
+nextButton.addEventListener('click', () => core.nextRadio());
 
-// prev and next buttons
-prevButton.addEventListener('click', prevRadio);
-nextButton.addEventListener('click', nextRadio);
-
-
+// Keep alive worker
 const worker = new Worker("./js/keepAlive.js");
-worker.onmessage = () => {
-  console.log("Mențin conexiunea activă...");
-};
+worker.onmessage = () => {};
 
+// Service Worker
 if ('serviceWorker' in navigator) {
-  // Unregister any stale SW from old paths (e.g. /js/sw.js)
   navigator.serviceWorker.getRegistrations().then(registrations => {
     registrations.forEach(reg => {
       const swUrl = reg.active?.scriptURL || '';
       if (!swUrl.endsWith('/sw.js') || swUrl.endsWith('/js/sw.js')) {
-        console.log('Unregistering stale SW:', swUrl);
         reg.unregister();
       }
     });
   });
 
   navigator.serviceWorker.register('./sw.js')
-    .then(reg => {
-      console.log('Service Worker registered!');
-      // Force check for updates immediately
-      reg.update();
-    })
+    .then(reg => reg.update())
     .catch(err => console.error('Service Worker registration failed:', err));
 
-  // When a new SW takes over, reload the page so no stale cache is served
-  navigator.serviceWorker.addEventListener('controllerchange', () => {
-    window.location.reload();
-  });
+  navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
 }
 
-
+// Theme color
 function updateThemeColor() {
   const isDarkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const themeColor = isDarkMode ? '#434238' : '#fffdef'; // Negru pentru dark mode, alb pentru light mode
-
+  const themeColor = isDarkMode ? '#434238' : '#fffdef';
   let metaThemeColor = document.querySelector('meta[name="theme-color"]');
   if (!metaThemeColor) {
-      metaThemeColor = document.createElement('meta');
-      metaThemeColor.setAttribute('name', 'theme-color');
-      document.head.appendChild(metaThemeColor);
+    metaThemeColor = document.createElement('meta');
+    metaThemeColor.setAttribute('name', 'theme-color');
+    document.head.appendChild(metaThemeColor);
   }
   metaThemeColor.setAttribute('content', themeColor);
 }
-
-// Inițializăm la încărcarea paginii
 updateThemeColor();
-
-// Ascultăm schimbările în preferințele sistemului
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeColor);
 
-
-// Restore last played station selection (without auto-play, browsers block it)
+// Restore last station
 const lastRadioIndex = localStorage.getItem('lastRadioIndex');
 if (lastRadioIndex !== null) {
   radioSelect.selectedIndex = parseInt(lastRadioIndex, 10);
 }
 
-// new selector
+// Custom selector UI
 const new_selector_open_button = document.getElementById('new_selector__button');
 const new_selector_content = document.getElementById('new_selector__content');
 const new_selector_button_example = document.getElementById('new_selector__button_example');
 
-
-// populate the new selector with the radios
 const radios = radioSelect.querySelectorAll('option');
 radios.forEach((radio, index) => {
-  // create a new button like the example that is in the dom
   const new_button = new_selector_button_example.cloneNode(true);
   new_button.id = '';
   new_button.classList.remove('hidden');
   new_button.innerText = radio.text;
-  
-  // play the radio on click
+
   new_button.addEventListener('click', () => {
-    playRadio(index);
+    core.playRadio(index);
     new_selector_content.classList.add('hidden');
   });
 
-  // append the new button to the new selector
   new_selector_content.appendChild(new_button);
 
-  // if it's selected, add the selected class
-  // this is by the radioSelect.selectedIndex
   if (radioSelect.selectedIndex && radioSelect.selectedIndex === index) {
-    
     new_button.classList.add('bg-Red');
-
-    // remove the selected class from previous selected
     const previous_selected = new_selector_content.querySelector('.bg-Red');
-    
-    if (previous_selected) {
-      previous_selected.classList.remove('bg-Red');
-    }
-
+    if (previous_selected) previous_selected.classList.remove('bg-Red');
   }
-
-
 });
 
-// on click open the new selector
 [new_selector_open_button, posterImage].map(el => el.addEventListener('click', () => {
   new_selector_content.classList.toggle('hidden');
-
-  //  loop to find the new selected radio and add the selected class
   const new_selector_buttons = new_selector_content.querySelectorAll('button');
   new_selector_buttons.forEach((button, index) => {
     if (radioSelect.selectedIndex === index) {
@@ -481,14 +274,10 @@ radios.forEach((radio, index) => {
       button.classList.remove('bg-Red');
     }
   });
-}
-));
+}));
 
-
-// on click anywhere outside the new selector, close it
 document.addEventListener('click', (e) => {
   if (!new_selector_content.contains(e.target) && !new_selector_open_button.contains(e.target) && !posterImage.contains(e.target)) {
     new_selector_content.classList.add('hidden');
   }
 });
-
