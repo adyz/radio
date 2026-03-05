@@ -29,6 +29,13 @@
   <!-- Styles -->
   <link rel="stylesheet" href="./css/output.css">
 
+  <!-- Preconnect to Cloudinary for faster LCP image -->
+  <link rel="preconnect" href="https://res.cloudinary.com" crossorigin>
+
+  <!-- Flatten JS module waterfall -->
+  <link rel="modulepreload" href="./js/radioCore.js">
+  <link rel="modulepreload" href="./js/stateMachine.js">
+
 </head>
 
 <body class="bg-Bg p-4 flex flex-col justify-center items-center">
@@ -107,6 +114,7 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
 
 
         <img
+          fetchpriority="high"
           src="https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:Coji%20Radio%20Player/nndti4oybhdzggf8epvh"
           alt="Coji Radio Player" class="w-full h-full object-cover">
       </div>
