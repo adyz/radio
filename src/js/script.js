@@ -106,7 +106,7 @@ const updateMediaSession = (newState) => {
       navigator.mediaSession.setActionHandler('play', () => core.resumeRadio());
     }
 
-    navigator.mediaSession.playbackState = isLive ? 'playing' : newState === 'paused' ? 'paused' : 'none';
+    navigator.mediaSession.playbackState = (isLive || isLoading) ? 'playing' : newState === 'paused' ? 'paused' : 'none';
 
     if (isLive || newState === 'paused') {
       navigator.mediaSession.setPositionState();
