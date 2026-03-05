@@ -82,7 +82,8 @@ export function createRadioCore(deps) {
 
     setState('loading');
 
-    playerPause();
+    // Don't call playerPause() here — setting a new src implicitly stops the old stream.
+    // Explicit pause fires a 'pause' event that makes the OS drop our media session.
     playerSetSrc(getStationUrl(index));
     playerLoad();
 
