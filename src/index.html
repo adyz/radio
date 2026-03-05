@@ -29,14 +29,6 @@
   <!-- Styles -->
   <link rel="stylesheet" href="./css/output.css">
 
-  <!-- Preconnect to Cloudinary for faster LCP image -->
-  <link rel="preconnect" href="https://res.cloudinary.com" crossorigin>
-  <link rel="preload" as="image" fetchpriority="high" href="https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:Coji%20Radio%20Player/nndti4oybhdzggf8epvh">
-
-  <!-- Flatten JS module waterfall -->
-  <link rel="modulepreload" href="./js/radioCore.js">
-  <link rel="modulepreload" href="./js/stateMachine.js">
-
 </head>
 
 <body class="bg-Bg p-4 flex flex-col justify-center items-center">
@@ -79,7 +71,7 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
   </div>
 
   <div
-    class="rounded-3xl shadow-xl w-full max-w-[540px] bg-gradient-to-t from-White to-bg text-white min-h-[calc(100dvh-130px)] flex flex-col align-center justify-end relative">
+    class="rounded-3xl shadow-xl w-full max-w-[540px] bg-gradient-to-t from-White to-bg text-white min-h-[calc(100dvh-180px)] flex flex-col align-center justify-end relative">
 
     <!-- Gradient overlay -->
     <div class="absolute top-0 left-0 w-[104%] h-[100%] -m-[2%] bg-gradient-to-b from-Bg to-transparent"></div>
@@ -115,7 +107,6 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
 
 
         <img
-          fetchpriority="high"
           src="https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:Coji%20Radio%20Player/nndti4oybhdzggf8epvh"
           alt="Coji Radio Player" class="w-full h-full object-cover">
       </div>
@@ -125,7 +116,7 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
       <!-- Button with move down a bit on press-->
 
       <div class="flex items-center justify-center mt-10 relative z-10">
-        <button id="prevButton" aria-label="Postul anterior"
+        <button id="prevButton"
           class="stroke-Red hover:stroke-Brown active:stroke-Brown w-1/3 flex justify-center bg-gradient-to-b hover:from-transparent hover:to-Red/10 active:from-transparent active:to-Red/15 pb-10 pt-10 rounded-bl-3xl">
           <svg class="h-20 max-w-[20%]" viewBox="0 0 65 107" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M61.8923 103.771L3 53.4709" stroke-width="6" stroke-linecap="round" />
@@ -133,7 +124,7 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
           </svg>
 
         </button>
-        <button id="playButton" aria-label="Redare"
+        <button id="playButton"
           class="stroke-Red hover:stroke-Brown active:stroke-Brown w-1/3 flex justify-center bg-gradient-to-b hover:from-transparent hover:to-Red/10 active:from-transparent active:to-Red/15 pb-10 pt-10 ">
           <svg class="h-20 max-w-[50%]" viewBox="0 0 129 129" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="64.5" cy="64.5" r="62" stroke-width="6" stroke-linecap="round" />
@@ -141,7 +132,7 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
               stroke-linecap="round" />
           </svg>
         </button>
-        <button id="pauseButton" aria-label="Pauză"
+        <button id="pauseButton"
           class="stroke-Red hover:stroke-Brown active:stroke-Brown w-1/3 justify-center flex hidden bg-gradient-to-b hover:from-transparent hover:to-Red/10 active:from-transparent active:to-Red/15 pb-10 pt-10 ">
           <svg class="h-20 max-w-[50%]" viewBox="0 0 129 129" fill="none" xmlns="http://www.w3.org/2000/svg">
             <circle cx="64.5" cy="64.5" r="62" stroke-width="6" stroke-linecap="round" />
@@ -149,14 +140,7 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
             <path d="M78 38L78 96" stroke-width="6" stroke-linecap="round" />
           </svg>
         </button>
-        <button id="stopButton" aria-label="Oprește"
-          class="stroke-Red hover:stroke-Brown active:stroke-Brown w-1/3 justify-center flex hidden bg-gradient-to-b hover:from-transparent hover:to-Red/10 active:from-transparent active:to-Red/15 pb-10 pt-10 ">
-          <svg class="h-20 max-w-[50%]" viewBox="0 0 129 129" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <circle cx="64.5" cy="64.5" r="62" stroke-width="6" stroke-linecap="round" />
-            <rect x="40" y="40" width="49" height="49" rx="4" stroke-width="5" stroke-linecap="round" />
-          </svg>
-        </button>
-        <button id="nextButton" aria-label="Postul următor"
+        <button id="nextButton"
           class="stroke-Red hover:stroke-Brown active:stroke-Brown w-1/3 flex justify-center bg-gradient-to-b hover:from-transparent hover:to-Red/10 active:from-transparent active:to-Red/15 pb-10 pt-10 rounded-br-3xl">
           <svg class="h-20 max-w-[20%]" viewBox="0 0 65 106" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M3.2146 3L62.1069 53.2999" stroke-width="6" stroke-linecap="round" />
@@ -181,11 +165,11 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
     Browser-ul tău nu suportă tag-ul audio.
   </audio>
 
-  <audio id="loadingNoise" loop preload="none">
+  <audio id="loadingNoise" loop>
     <source src="./sounds/loading-low.mp3" type="audio/mpeg">
   </audio>
 
-  <audio id="errorNoise" loop preload="none">
+  <audio id="errorNoise" loop>
     <source src="./sounds/error-low.mp3" type="audio/mpeg">
   </audio>
 
