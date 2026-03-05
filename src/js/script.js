@@ -234,6 +234,12 @@ player.addEventListener('stalled', () => {
   player.addEventListener('playing', () => clearTimeout(stalledTimeout), { once: true });
 });
 
+// Auto-recovery when network comes back
+window.addEventListener('online', () => core.retryFromError());
+setInterval(() => {
+  if (core.getState() === 'error' && navigator.onLine) core.retryFromError();
+}, 10000);
+
 // Prev / Next
 prevButton.addEventListener('click', () => core.prevRadio());
 nextButton.addEventListener('click', () => core.nextRadio());

@@ -191,6 +191,38 @@ export function createRadioCore(deps) {
     }
   }
 
+  // Auto-recovery: silently try to reconnect while on error screen.
+  // No loading UI, no sounds — if it works, go straight to playing.
+  function retryFromError() {
+    if (getState() !== 'error') return;
+
+    const index = getSelectedIndex();
+    const playId = ++currentPlayId;
+
+    playerPause();
+    playerSetSrc(getStationUrl(index));
+    playerLoad();
+
+    const silentTimeout = _setTimeout(() => {
+      if (playId !== currentPlayId) return;
+      playerPause();
+      playerSetSrc('');
+      // Stay on error silently
+    }, LOADING_TIMEOUT_MS);
+
+    playerPlay().then(() => {
+      if (playId !== currentPlayId) return;
+      _clearTimeout(silentTimeout);
+      retryCount = 0;
+      saveLastIndex(index);
+      setState('playing');
+    }).catch(() => {
+      if (playId !== currentPlayId) return;
+      _clearTimeout(silentTimeout);
+      // Stay on error silently
+    });
+  }
+
   function onPlayButtonClick() {
     const s = getState();
     if (s === 'idle' || s === 'error') {
@@ -212,6 +244,7 @@ export function createRadioCore(deps) {
     onPlayerPlay,
     onPlayerPause,
     onPlayerError,
+    retryFromError,
     onPlayButtonClick,
     _getPlayId: () => currentPlayId,
     _getRetryCount: () => retryCount,
