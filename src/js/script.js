@@ -98,13 +98,8 @@ const updateMediaSession = (newState) => {
       artwork: [{ src: cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, isLive) }]
     });
 
-    navigator.mediaSession.setActionHandler('previoustrack', () => core.prevRadio());
-    navigator.mediaSession.setActionHandler('nexttrack', () => core.nextRadio());
-
-    if (!isLoading && !hasError) {
-      navigator.mediaSession.setActionHandler('pause', () => core.pauseRadio());
-      navigator.mediaSession.setActionHandler('play', () => core.resumeRadio());
-    }
+    // Action handlers are registered once after core init (see below)
+    // to avoid TDZ — updateMediaSession is called during createRadioCore()
 
     navigator.mediaSession.playbackState = (isLive || isLoading) ? 'playing' : newState === 'paused' ? 'paused' : 'none';
 
@@ -141,6 +136,14 @@ const core = createRadioCore({
   clearTimeout,
   performanceNow:   () => performance.now(),
 });
+
+// --- Media Session action handlers (registered once, after core exists) ---
+if ('mediaSession' in navigator) {
+  navigator.mediaSession.setActionHandler('previoustrack', () => core.prevRadio());
+  navigator.mediaSession.setActionHandler('nexttrack', () => core.nextRadio());
+  navigator.mediaSession.setActionHandler('pause', () => core.pauseRadio());
+  navigator.mediaSession.setActionHandler('play', () => core.resumeRadio());
+}
 
 // --- Event listeners ---
 
@@ -202,18 +205,22 @@ worker.onmessage = () => {};
 
 // Service Worker
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(registrations => {
-    registrations.forEach(reg => {
-      const swUrl = reg.active?.scriptURL || '';
-      if (!swUrl.endsWith('/sw.js') || swUrl.endsWith('/js/sw.js')) {
-        reg.unregister();
-      }
-    });
-  });
-
-  navigator.serviceWorker.register('./sw.js')
-    .then(reg => reg.update())
-    .catch(err => console.error('Service Worker registration failed:', err));
+  (async () => {
+    try {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map(reg => {
+        const swUrl = reg.active?.scriptURL || reg.installing?.scriptURL || reg.waiting?.scriptURL || '';
+        if (!swUrl.endsWith('/sw.js') || swUrl.endsWith('/js/sw.js')) {
+          return reg.unregister();
+        }
+        return Promise.resolve(false);
+      }));
+      const reg = await navigator.serviceWorker.register('./sw.js');
+      reg.update();
+    } catch (err) {
+      console.error('Service Worker registration failed:', err);
+    }
+  })();
 
   navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
 }
@@ -258,7 +265,7 @@ radios.forEach((radio, index) => {
 
   new_selector_content.appendChild(new_button);
 
-  if (radioSelect.selectedIndex && radioSelect.selectedIndex === index) {
+  if (radioSelect.selectedIndex === index) {
     new_button.classList.add('bg-Red');
     const previous_selected = new_selector_content.querySelector('.bg-Red');
     if (previous_selected) previous_selected.classList.remove('bg-Red');

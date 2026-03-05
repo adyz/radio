@@ -67,16 +67,18 @@ export function createRadioCore(deps) {
     _clearTimeout(timers.loading);
     currentPlayId++;
     retryCount = 0;
+    lastPauseTime = null;
     setState('idle');
     playerPause();
     playerSetSrc('');
   }
 
-  function playRadio(index) {
+  function playRadio(index, _isRetry) {
     setSelectedIndex(index);
 
     _clearTimeout(timers.retry);
     _clearTimeout(timers.loading);
+    if (!_isRetry) retryCount = 0;
 
     const playId = ++currentPlayId;
 
@@ -114,7 +116,7 @@ export function createRadioCore(deps) {
       setState('retrying');
       timers.retry = _setTimeout(() => {
         if (playId !== currentPlayId) return;
-        playRadio(index);
+        playRadio(index, true);
       }, 3000);
     } else {
       setState('error');
@@ -153,13 +155,16 @@ export function createRadioCore(deps) {
 
   // Called from native player 'play' event
   function onPlayerPlay() {
-    const now = performanceNow();
-    const timeDiff = now - lastPauseTime;
-    if (lastPauseTime && timeDiff > 2000) {
+    if (getState() === 'paused' && lastPauseTime) {
+      const timeDiff = performanceNow() - lastPauseTime;
       lastPauseTime = null;
-      playerPause();
-      playerSetSrc('');
-      playRadio(getSelectedIndex());
+      if (timeDiff > 2000) {
+        playerPause();
+        playerSetSrc('');
+        playRadio(getSelectedIndex());
+        return;
+      }
+      setState('playing');
       return;
     }
     lastPauseTime = null;
@@ -172,8 +177,8 @@ export function createRadioCore(deps) {
   function onPlayerPause() {
     if (getState() === 'playing') {
       setState('paused');
+      lastPauseTime = performanceNow();
     }
-    lastPauseTime = performanceNow();
   }
 
   function onPlayButtonClick() {
