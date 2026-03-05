@@ -110,7 +110,7 @@ const updateMediaSession = (newState) => {
   const title = radioSelect.options[radioSelect.selectedIndex].text;
   const isIdle = newState === 'idle';
   const isLoading = newState === 'loading' || newState === 'retrying';
-  const hasError = newState === 'error';
+  const hasError = newState === 'error' || newState === 'recovering';
   const isLive = newState === 'playing';
 
   const idleText = hasRestoredStation ? title : 'Coji Radio Player';
@@ -217,8 +217,8 @@ player.addEventListener('play', () => {
 
 player.addEventListener('pause', () => {
   const s = core.getState();
-  // Don't signal 'paused' during loading/retrying — OS would hand over media control to another app
-  if ('mediaSession' in navigator && s !== 'loading' && s !== 'retrying') {
+  // Don't signal 'paused' during loading/retrying/recovering — OS would hand over media control to another app
+  if ('mediaSession' in navigator && s !== 'loading' && s !== 'retrying' && s !== 'recovering') {
     navigator.mediaSession.playbackState = 'paused';
   }
   core.onPlayerPause();

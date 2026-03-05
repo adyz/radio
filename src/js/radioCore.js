@@ -11,12 +11,13 @@ export const MAX_RETRIES = 1;
 export const LOADING_TIMEOUT_MS = 6000;
 
 const STATE_FX = {
-  idle:     { button: 'play',  loading: 'stop',  error: 'stop',  loadingMsg: false, errorMsg: false },
-  loading:  { button: 'stop',  loading: 'play',  error: 'stop',  loadingMsg: true,  errorMsg: false },
-  playing:  { button: 'pause', loading: 'stop',  error: 'stop',  loadingMsg: false, errorMsg: false },
-  paused:   { button: 'play',  loading: 'stop',  error: 'stop',  loadingMsg: false, errorMsg: false },
-  retrying: { button: 'stop',  loading: 'keep',  error: 'stop',  loadingMsg: false, errorMsg: false },
-  error:    { button: 'stop',  loading: 'stop',  error: 'play',  loadingMsg: false, errorMsg: true  },
+  idle:       { button: 'play',  loading: 'stop',  error: 'stop',  loadingMsg: false, errorMsg: false },
+  loading:    { button: 'stop',  loading: 'play',  error: 'stop',  loadingMsg: true,  errorMsg: false },
+  playing:    { button: 'pause', loading: 'stop',  error: 'stop',  loadingMsg: false, errorMsg: false },
+  paused:     { button: 'play',  loading: 'stop',  error: 'stop',  loadingMsg: false, errorMsg: false },
+  retrying:   { button: 'stop',  loading: 'keep',  error: 'stop',  loadingMsg: false, errorMsg: false },
+  error:      { button: 'stop',  loading: 'stop',  error: 'play',  loadingMsg: false, errorMsg: true  },
+  recovering: { button: 'stop',  loading: 'stop',  error: 'keep',  loadingMsg: false, errorMsg: true  },
 };
 
 export function createRadioCore(deps) {
@@ -42,11 +43,10 @@ export function createRadioCore(deps) {
     performanceNow,
   } = deps;
 
-  const timers = { retry: null, loading: null, silentRetry: null, autoRecovery: null };
+  const timers = { retry: null, loading: null, recovery: null };
   let retryCount = 0;
   let currentPlayId = 0;
   let lastPauseTime = null;
-  let isSilentRetrying = false;
 
   // --- State machine (no radio knowledge) ---
 
@@ -66,8 +66,7 @@ export function createRadioCore(deps) {
   function stopRadio() {
     _clearTimeout(timers.retry);
     _clearTimeout(timers.loading);
-    stopAutoRecovery();
-    isSilentRetrying = false;
+    _clearTimeout(timers.recovery);
     currentPlayId++;
     retryCount = 0;
     lastPauseTime = null;
@@ -81,6 +80,7 @@ export function createRadioCore(deps) {
 
     _clearTimeout(timers.retry);
     _clearTimeout(timers.loading);
+    _clearTimeout(timers.recovery);
     if (!_isRetry) retryCount = 0;
 
     const playId = ++currentPlayId;
@@ -124,7 +124,7 @@ export function createRadioCore(deps) {
       }, 3000);
     } else {
       setState('error');
-      startAutoRecovery();
+      scheduleRecovery();
     }
   }
 
@@ -152,7 +152,10 @@ export function createRadioCore(deps) {
     if (playerIsPaused()) {
       const s = getState();
       if (s === 'paused') playerPlay();
-      else if (s === 'idle' || s === 'error') playRadio(getSelectedIndex());
+      else if (s === 'idle' || s === 'error' || s === 'recovering') {
+        _clearTimeout(timers.recovery);
+        playRadio(getSelectedIndex());
+      }
     } else {
       playerPause();
     }
@@ -195,61 +198,56 @@ export function createRadioCore(deps) {
     }
   }
 
-  // Auto-recovery: silently try to reconnect while on error screen.
-  // No loading UI, no sounds — if it works, go straight to playing.
+  // Schedule a silent recovery attempt after 10s
+  function scheduleRecovery() {
+    _clearTimeout(timers.recovery);
+    timers.recovery = _setTimeout(() => {
+      retryFromError();
+    }, 10000);
+  }
+
+  // Silent recovery: uses the state machine ('recovering' state).
+  // No loading sounds, error image stays — if it works, go straight to playing.
   function retryFromError() {
-    if (getState() !== 'error' || isSilentRetrying) return;
-    isSilentRetrying = true;
+    const s = getState();
+    if (s !== 'error' && s !== 'recovering') return;
 
     const index = getSelectedIndex();
     const playId = ++currentPlayId;
+
+    setState('recovering');
 
     playerPause();
     playerSetSrc(getStationUrl(index));
     playerLoad();
 
-    const silentTimeout = _setTimeout(() => {
+    timers.loading = _setTimeout(() => {
       if (playId !== currentPlayId) return;
-      currentPlayId++;  // invalidate so late .then() won't fire
+      currentPlayId++;  // invalidate late .then()
       playerPause();
       playerSetSrc('');
-      isSilentRetrying = false;
+      setState('error');
+      scheduleRecovery();
     }, LOADING_TIMEOUT_MS);
 
     playerPlay().then(() => {
       if (playId !== currentPlayId) return;
-      _clearTimeout(silentTimeout);
-      isSilentRetrying = false;
-      stopAutoRecovery();
+      _clearTimeout(timers.loading);
       retryCount = 0;
       saveLastIndex(index);
       setState('playing');
     }).catch(() => {
       if (playId !== currentPlayId) return;
-      _clearTimeout(silentTimeout);
-      isSilentRetrying = false;
+      _clearTimeout(timers.loading);
+      setState('error');
+      scheduleRecovery();
     });
-  }
-
-  // Start/stop periodic auto-recovery polling (managed inside core)
-  function startAutoRecovery() {
-    stopAutoRecovery();
-    timers.autoRecovery = setInterval(() => {
-      if (getState() === 'error') retryFromError();
-      else stopAutoRecovery();
-    }, 10000);
-  }
-
-  function stopAutoRecovery() {
-    if (timers.autoRecovery) {
-      clearInterval(timers.autoRecovery);
-      timers.autoRecovery = null;
-    }
   }
 
   function onPlayButtonClick() {
     const s = getState();
-    if (s === 'idle' || s === 'error') {
+    if (s === 'idle' || s === 'error' || s === 'recovering') {
+      _clearTimeout(timers.recovery);
       playRadio(getSelectedIndex());
     } else if (s === 'paused') {
       playerPlay();
