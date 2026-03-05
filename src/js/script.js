@@ -71,6 +71,17 @@ function audioInstance(htmlElement) {
         isPlaying = false;
       }
     },
+    // iOS requires a user gesture to unlock audio elements.
+    // Call this from any click/tap handler to ensure play() works later.
+    warmUp() {
+      if (!isPlaying) {
+        htmlElement.src = blobUrl || initialSrc;
+        htmlElement.play().then(() => {
+          htmlElement.pause();
+          htmlElement.currentTime = 0;
+        }).catch(() => {});
+      }
+    },
   };
 }
 
@@ -176,7 +187,11 @@ if (window.electronAPI) {
 }
 
 // Buttons
-playButton.addEventListener('click', () => core.onPlayButtonClick());
+playButton.addEventListener('click', () => {
+  loadingNoiseInstance.warmUp();
+  errorNoiseInstance.warmUp();
+  core.onPlayButtonClick();
+});
 pauseButton.addEventListener('click', () => core.pauseRadio());
 stopButton.addEventListener('click', () => core.stopRadio());
 
@@ -259,6 +274,8 @@ radios.forEach((radio, index) => {
   new_button.innerText = radio.text;
 
   new_button.addEventListener('click', () => {
+    loadingNoiseInstance.warmUp();
+    errorNoiseInstance.warmUp();
     core.playRadio(index);
     new_selector_content.classList.add('hidden');
   });
