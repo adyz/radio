@@ -42,10 +42,11 @@ export function createRadioCore(deps) {
     performanceNow,
   } = deps;
 
-  const timers = { retry: null, loading: null };
+  const timers = { retry: null, loading: null, silentRetry: null, autoRecovery: null };
   let retryCount = 0;
   let currentPlayId = 0;
   let lastPauseTime = null;
+  let isSilentRetrying = false;
 
   // --- State machine (no radio knowledge) ---
 
@@ -65,6 +66,8 @@ export function createRadioCore(deps) {
   function stopRadio() {
     _clearTimeout(timers.retry);
     _clearTimeout(timers.loading);
+    stopAutoRecovery();
+    isSilentRetrying = false;
     currentPlayId++;
     retryCount = 0;
     lastPauseTime = null;
@@ -121,6 +124,7 @@ export function createRadioCore(deps) {
       }, 3000);
     } else {
       setState('error');
+      startAutoRecovery();
     }
   }
 
@@ -194,7 +198,8 @@ export function createRadioCore(deps) {
   // Auto-recovery: silently try to reconnect while on error screen.
   // No loading UI, no sounds — if it works, go straight to playing.
   function retryFromError() {
-    if (getState() !== 'error') return;
+    if (getState() !== 'error' || isSilentRetrying) return;
+    isSilentRetrying = true;
 
     const index = getSelectedIndex();
     const playId = ++currentPlayId;
@@ -205,22 +210,41 @@ export function createRadioCore(deps) {
 
     const silentTimeout = _setTimeout(() => {
       if (playId !== currentPlayId) return;
+      currentPlayId++;  // invalidate so late .then() won't fire
       playerPause();
       playerSetSrc('');
-      // Stay on error silently
+      isSilentRetrying = false;
     }, LOADING_TIMEOUT_MS);
 
     playerPlay().then(() => {
       if (playId !== currentPlayId) return;
       _clearTimeout(silentTimeout);
+      isSilentRetrying = false;
+      stopAutoRecovery();
       retryCount = 0;
       saveLastIndex(index);
       setState('playing');
     }).catch(() => {
       if (playId !== currentPlayId) return;
       _clearTimeout(silentTimeout);
-      // Stay on error silently
+      isSilentRetrying = false;
     });
+  }
+
+  // Start/stop periodic auto-recovery polling (managed inside core)
+  function startAutoRecovery() {
+    stopAutoRecovery();
+    timers.autoRecovery = setInterval(() => {
+      if (getState() === 'error') retryFromError();
+      else stopAutoRecovery();
+    }, 10000);
+  }
+
+  function stopAutoRecovery() {
+    if (timers.autoRecovery) {
+      clearInterval(timers.autoRecovery);
+      timers.autoRecovery = null;
+    }
   }
 
   function onPlayButtonClick() {
