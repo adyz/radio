@@ -88,6 +88,8 @@ export function createRadioCore(deps) {
     // No point trying if offline — go straight to error and auto-recover later
     if (!isOnline()) {
       currentPlayId++;
+      playerPause();
+      playerSetSrc('');
       setState('error');
       scheduleRecovery();
       return;
@@ -255,7 +257,8 @@ export function createRadioCore(deps) {
       retryCount = 0;
       saveLastIndex(index);
       setState('playing');
-    }).catch(() => {
+    }).catch((error) => {
+      if (error.name === 'AbortError') return;
       if (playId !== currentPlayId) return;
       _clearTimeout(timers.loading);
       setState('error');
