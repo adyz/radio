@@ -43,15 +43,17 @@ if (hasRestoredStation) {
   radioSelect.selectedIndex = parseInt(localStorage.getItem('lastRadioIndex'), 10);
 }
 
-// --- Audio instances (blob preload) ---
+// --- Audio instances (lazy blob preload) ---
+
+let blobsPreloaded = false;
 
 function audioInstance(htmlElement) {
   let initialSrc = htmlElement.querySelector('source').src;
   let isPlaying = false;
   let blobUrl = null;
 
-  // Defer blob preload to idle time so sounds don't block critical rendering
   const preloadBlob = () => {
+    if (blobUrl) return; // already loaded
     fetch(initialSrc)
       .then(r => r.blob())
       .then(blob => {
@@ -61,12 +63,6 @@ function audioInstance(htmlElement) {
         console.warn('Audio blob preload failed, using network src:', initialSrc, err);
       });
   };
-
-  if ('requestIdleCallback' in window) {
-    requestIdleCallback(preloadBlob, { timeout: 2000 });
-  } else {
-    setTimeout(preloadBlob, 2000);
-  }
 
   return {
     play() {
@@ -98,11 +94,20 @@ function audioInstance(htmlElement) {
         }).catch(() => {});
       }
     },
+    preloadBlob,
   };
 }
 
 const loadingNoiseInstance = audioInstance(loadingNoise);
 const errorNoiseInstance = audioInstance(errorNoise);
+
+// Preload audio blobs on first user interaction (not at page load)
+function preloadAudioBlobs() {
+  if (blobsPreloaded) return;
+  blobsPreloaded = true;
+  loadingNoiseInstance.preloadBlob();
+  errorNoiseInstance.preloadBlob();
+}
 
 // --- UI helpers ---
 
@@ -209,6 +214,7 @@ if (window.electronAPI) {
 
 // Buttons
 playButton.addEventListener('click', () => {
+  preloadAudioBlobs();
   loadingNoiseInstance.warmUp();
   errorNoiseInstance.warmUp();
   core.onPlayButtonClick();
@@ -302,6 +308,7 @@ radios.forEach((radio, index) => {
   new_button.innerText = radio.text;
 
   new_button.addEventListener('click', () => {
+    preloadAudioBlobs();
     loadingNoiseInstance.warmUp();
     errorNoiseInstance.warmUp();
     core.playRadio(index);
