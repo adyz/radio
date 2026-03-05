@@ -31,6 +31,7 @@
 
   <!-- Preconnect to Cloudinary for faster LCP image -->
   <link rel="preconnect" href="https://res.cloudinary.com" crossorigin>
+  <link rel="preload" as="image" href="https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:Coji%20Radio%20Player/nndti4oybhdzggf8epvh">
 
   <!-- Flatten JS module waterfall -->
   <link rel="modulepreload" href="./js/radioCore.js">
@@ -180,11 +181,11 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
     Browser-ul tău nu suportă tag-ul audio.
   </audio>
 
-  <audio id="loadingNoise" loop>
+  <audio id="loadingNoise" loop preload="none">
     <source src="./sounds/loading-low.mp3" type="audio/mpeg">
   </audio>
 
-  <audio id="errorNoise" loop>
+  <audio id="errorNoise" loop preload="none">
     <source src="./sounds/error-low.mp3" type="audio/mpeg">
   </audio>
 

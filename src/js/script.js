@@ -50,17 +50,23 @@ function audioInstance(htmlElement) {
   let isPlaying = false;
   let blobUrl = null;
 
-  htmlElement.src = initialSrc;
-  htmlElement.load();
+  // Defer blob preload to idle time so sounds don't block critical rendering
+  const preloadBlob = () => {
+    fetch(initialSrc)
+      .then(r => r.blob())
+      .then(blob => {
+        blobUrl = URL.createObjectURL(blob);
+      })
+      .catch(err => {
+        console.warn('Audio blob preload failed, using network src:', initialSrc, err);
+      });
+  };
 
-  fetch(initialSrc)
-    .then(r => r.blob())
-    .then(blob => {
-      blobUrl = URL.createObjectURL(blob);
-    })
-    .catch(err => {
-      console.warn('Audio blob preload failed, using network src:', initialSrc, err);
-    });
+  if ('requestIdleCallback' in window) {
+    requestIdleCallback(preloadBlob, { timeout: 2000 });
+  } else {
+    setTimeout(preloadBlob, 2000);
+  }
 
   return {
     play() {

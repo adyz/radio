@@ -14,9 +14,19 @@ const distFolder = path.join(__dirname, "public");
 async function minifyHTML() {
     const htmlPath = path.join(srcFolder, "index.html");
     const distHtmlPath = path.join(distFolder, "index.html");
+    const cssPath = path.join(srcFolder, "css", "output.css");
 
     try {
-        const htmlContent = await fs.readFile(htmlPath, "utf8");
+        let htmlContent = await fs.readFile(htmlPath, "utf8");
+
+        // Inline CSS to eliminate render-blocking request
+        const cssContent = await fs.readFile(cssPath, "utf8");
+        const cssLinkPattern = /<link[^>]*href="[^"]*output\.css"[^>]*>/;
+        if (!cssLinkPattern.test(htmlContent)) {
+            throw new Error('Could not find CSS <link> tag to inline — check src/index.html');
+        }
+        htmlContent = htmlContent.replace(cssLinkPattern, `<style>${cssContent}</style>`);
+
         const minifiedHtml = await minify(htmlContent, {
             collapseWhitespace: true,
             removeComments: true,
@@ -29,7 +39,7 @@ async function minifyHTML() {
 
         await fs.mkdir(distFolder, { recursive: true });
         await fs.writeFile(distHtmlPath, minifiedHtml);
-        console.log("✅ Minified index.html");
+        console.log("✅ Minified index.html (with inlined CSS)");
     } catch (error) {
         console.error("❌ Error minifying HTML:", error);
     }
@@ -81,9 +91,9 @@ async function buildCSS() {
 
 async function build() {
     console.log("🚀 Starting build process...");
-    await minifyHTML();
+    await buildCSS();       // 1. Generate CSS first
+    await minifyHTML();     // 2. Inline CSS into HTML, then minify
     await minifyJS();
-    await buildCSS();
     await copyAssets();
     console.log("🎉 Build complete!");
 }
