@@ -32,7 +32,7 @@ function cloudinaryImageUrl(text, live = false) {
 }
 
 // Pre-cache status images so they're available offline
-['Eroare', 'Se încarcă...'].forEach(text => {
+['Eroare', 'Se încarcă...', 'Coji Radio Player'].forEach(text => {
   const img = new Image();
   img.src = cloudinaryImageUrl(text);
 });
@@ -110,7 +110,7 @@ const updateMediaSession = (newState) => {
   const title = radioSelect.options[radioSelect.selectedIndex].text;
   const isIdle = newState === 'idle';
   const isLoading = newState === 'loading' || newState === 'retrying';
-  const hasError = newState === 'error';
+  const hasError = newState === 'error' || newState === 'recovering';
   const isLive = newState === 'playing';
 
   const idleText = hasRestoredStation ? title : 'Coji Radio Player';
@@ -160,6 +160,7 @@ const core = createRadioCore({
   setTimeout,
   clearTimeout,
   performanceNow:   () => performance.now(),
+  isOnline:          () => navigator.onLine,
 });
 
 // --- Media Session action handlers (registered once, after core exists) ---
@@ -217,8 +218,8 @@ player.addEventListener('play', () => {
 
 player.addEventListener('pause', () => {
   const s = core.getState();
-  // Don't signal 'paused' during loading/retrying — OS would hand over media control to another app
-  if ('mediaSession' in navigator && s !== 'loading' && s !== 'retrying') {
+  // Don't signal 'paused' during loading/retrying/recovering — OS would hand over media control to another app
+  if ('mediaSession' in navigator && s !== 'loading' && s !== 'retrying' && s !== 'recovering') {
     navigator.mediaSession.playbackState = 'paused';
   }
   core.onPlayerPause();
@@ -233,6 +234,9 @@ player.addEventListener('stalled', () => {
   }, 5000);
   player.addEventListener('playing', () => clearTimeout(stalledTimeout), { once: true });
 });
+
+// Auto-recovery when network comes back
+window.addEventListener('online', () => core.retryFromError());
 
 // Prev / Next
 prevButton.addEventListener('click', () => core.prevRadio());
