@@ -21,10 +21,11 @@ async function minifyHTML() {
 
         // Inline CSS to eliminate render-blocking request
         const cssContent = await fs.readFile(cssPath, "utf8");
-        htmlContent = htmlContent.replace(
-            /<link rel="stylesheet" href="\.\/css\/output\.css">/,
-            `<style>${cssContent}</style>`
-        );
+        const cssLinkPattern = /<link[^>]*href="[^"]*output\.css"[^>]*>/;
+        if (!cssLinkPattern.test(htmlContent)) {
+            throw new Error('Could not find CSS <link> tag to inline — check src/index.html');
+        }
+        htmlContent = htmlContent.replace(cssLinkPattern, `<style>${cssContent}</style>`);
 
         const minifiedHtml = await minify(htmlContent, {
             collapseWhitespace: true,

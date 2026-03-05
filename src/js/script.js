@@ -63,7 +63,7 @@ function audioInstance(htmlElement) {
   };
 
   if ('requestIdleCallback' in window) {
-    requestIdleCallback(preloadBlob);
+    requestIdleCallback(preloadBlob, { timeout: 2000 });
   } else {
     setTimeout(preloadBlob, 2000);
   }
