@@ -1,7 +1,5 @@
 /**
- * script-beta.js — uses radioCore.js state machine
- * Drop-in replacement for script.js. To switch:
- *   <script type="module" src="./js/script-beta.js"></script>
+ * Radio Player — DOM glue layer (uses radioCore.js state machine)
  */
 
 import { createRadioCore } from './radioCore.js';
