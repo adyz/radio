@@ -31,7 +31,11 @@ function cloudinaryImageUrl(text, live = false) {
   return `https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:${text}/${live ? url_live : url_non_live}`;
 }
 
-posterImage.querySelector('img').src = cloudinaryImageUrl('Coji Radio Player');
+// Restore last station before anything reads selectedIndex
+const hasRestoredStation = localStorage.getItem('lastRadioIndex') !== null;
+if (hasRestoredStation) {
+  radioSelect.selectedIndex = parseInt(localStorage.getItem('lastRadioIndex'), 10);
+}
 
 // --- Audio instances (blob preload) ---
 
@@ -98,15 +102,19 @@ const showButton = (which) => {
 
 const updateMediaSession = (newState) => {
   const title = radioSelect.options[radioSelect.selectedIndex].text;
+  const isIdle = newState === 'idle';
   const isLoading = newState === 'loading' || newState === 'retrying';
   const hasError = newState === 'error';
   const isLive = newState === 'playing';
 
+  const idleText = hasRestoredStation ? title : 'Coji Radio Player';
+  const displayText = isIdle ? idleText : isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title;
+
   if ('mediaSession' in navigator) {
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: isLoading ? `Se încarcă...${title}` : hasError ? `Eroare la încărcarea ${title}` : title,
-      artist: `Coji Radio Player | ${title}`,
-      artwork: [{ src: cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, isLive) }]
+      title: isLoading ? `Se încarcă...${title}` : hasError ? `Eroare la încărcarea ${title}` : isIdle ? idleText : title,
+      artist: `Coji Radio Player${isIdle && !hasRestoredStation ? '' : ` | ${title}`}`,
+      artwork: [{ src: cloudinaryImageUrl(displayText, isLive) }]
     });
 
     // Action handlers are registered once after core init (see below)
@@ -119,8 +127,8 @@ const updateMediaSession = (newState) => {
     }
   }
 
-  posterImage.querySelector('img').src = cloudinaryImageUrl(isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title, isLive);
-  document.title = `${isLoading ? "⏳" : ''} ${hasError ? '❤️‍🩹' : ''} ${isLive ? '🔴' : ''} ${isLoading ? `Se incarca ${title}` : hasError ? 'Eroare' : title}`;
+  posterImage.querySelector('img').src = cloudinaryImageUrl(displayText, isLive);
+  document.title = `${isLoading ? "⏳" : ''} ${hasError ? '❤️‍🩹' : ''} ${isLive ? '🔴' : ''} ${isIdle ? idleText : isLoading ? `Se incarca ${title}` : hasError ? 'Eroare' : title}`;
   loadingMsg.innerText = isLoading ? `Se incarca ${title}...` : '';
 };
 
@@ -254,12 +262,6 @@ function updateThemeColor() {
 }
 updateThemeColor();
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeColor);
-
-// Restore last station
-const lastRadioIndex = localStorage.getItem('lastRadioIndex');
-if (lastRadioIndex !== null) {
-  radioSelect.selectedIndex = parseInt(lastRadioIndex, 10);
-}
 
 // Custom selector UI
 const new_selector_open_button = document.getElementById('new_selector__button');
