@@ -36,19 +36,31 @@ async function trimCache() {
 // Serve cached Cloudinary images when offline (network-first)
 self.addEventListener('fetch', (event) => {
   const url = event.request.url;
-  if (!url.includes('res.cloudinary.com')) return;
+  if (!url.includes('res.cloudinary.com') || event.request.method !== 'GET') return;
 
   event.respondWith(
-    fetch(event.request)
-      .then(response => {
-        // Update cache with fresh copy
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then(cache => {
-          cache.put(event.request, clone);
-          trimCache();
-        });
+    (async () => {
+      try {
+        const response = await fetch(event.request);
+
+        if (response.ok) {
+          const clone = response.clone();
+          event.waitUntil(
+            (async () => {
+              try {
+                const cache = await caches.open(CACHE_NAME);
+                await cache.put(event.request, clone);
+                await trimCache();
+              } catch (_) { /* swallow cache errors */ }
+            })()
+          );
+        }
+
         return response;
-      })
-      .catch(() => caches.match(event.request))
+      } catch (_) {
+        const cached = await caches.match(event.request);
+        return cached || Response.error();
+      }
+    })()
   );
 });

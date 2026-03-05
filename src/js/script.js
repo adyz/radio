@@ -44,11 +44,17 @@ if ('caches' in window) {
   caches.open('radio-images').then(cache => {
     STATUS_IMAGE_TEXTS.forEach(text => {
       const url = cloudinaryImageUrl(text);
-      cache.match(url).then(hit => {
-        if (!hit) fetch(url).then(res => { if (res.ok) cache.put(url, res); });
-      });
+      cache.match(url)
+        .then(hit => {
+          if (!hit) {
+            return fetch(url).then(res => {
+              if (res.ok) return cache.put(url, res);
+            });
+          }
+        })
+        .catch(() => { /* offline or CORS — ignore, SW will cache on next online visit */ });
     });
-  });
+  }).catch(() => { /* cache API unavailable */ });
 }
 
 // Restore last station before anything reads selectedIndex

@@ -8,7 +8,7 @@
     "start": "http-server \"public\" --port=3000",
     "vercel-build": "npm run build",
     "tailwind": "npx tailwindcss -i ./src/css/input.css -o ./src/css/output.css --watch",
-    "watch": "echo '\\n  Network: http://'$(ipconfig getifaddr en0)':3210\\n' && live-server \"src\" --port=3210 --host=0.0.0.0",
+    "watch": "live-server \"src\" --port=3210 --host=0.0.0.0",
     "dev": "concurrently \"npm run watch\" \"npm run tailwind\""
   },
   "author": "",
