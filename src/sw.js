@@ -24,7 +24,7 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-// Trim cache to prevent unbounded growth (LRU-style: oldest entries first)
+// Trim cache to prevent unbounded growth (FIFO: oldest entries evicted first)
 async function trimCache() {
   const cache = await caches.open(CACHE_NAME);
   const keys = await cache.keys();
@@ -43,7 +43,7 @@ self.addEventListener('fetch', (event) => {
       try {
         const response = await fetch(event.request);
 
-        if (response.ok) {
+        if (response.ok || response.type === 'opaque') {
           const clone = response.clone();
           event.waitUntil(
             (async () => {

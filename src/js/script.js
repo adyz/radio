@@ -47,8 +47,8 @@ if ('caches' in window) {
       cache.match(url)
         .then(hit => {
           if (!hit) {
-            return fetch(url).then(res => {
-              if (res.ok) return cache.put(url, res);
+            return fetch(url, { mode: 'no-cors' }).then(res => {
+              if (res.ok || res.type === 'opaque') return cache.put(url, res);
             });
           }
         })
