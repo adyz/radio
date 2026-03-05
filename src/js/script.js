@@ -25,17 +25,31 @@ const posterImage = document.getElementById('posterImage');
 
 // --- Cloudinary ---
 
+// --- All user-facing labels (single source of truth) ---
+const LABELS = {
+  appName:  'Coji Radio Player',
+  loading:  'Se încarcă...',
+  error:    'Eroare',
+};
+
 function cloudinaryImageUrl(text, live = false) {
   const url_non_live = 'nndti4oybhdzggf8epvh';
   const url_live = 'rhz6yy4btbqicjqhsy7a';
   return `https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:${text}/${live ? url_live : url_non_live}`;
 }
 
-// Pre-cache status images so they're available offline
-['Eroare', 'Se încarcă...', 'Coji Radio Player'].forEach(text => {
-  const img = new Image();
-  img.src = cloudinaryImageUrl(text);
-});
+// Pre-cache status images into Cache API so they're reliably available offline
+const STATUS_IMAGE_TEXTS = Object.values(LABELS);
+if ('caches' in window) {
+  caches.open('radio-images').then(cache => {
+    STATUS_IMAGE_TEXTS.forEach(text => {
+      const url = cloudinaryImageUrl(text);
+      cache.match(url).then(hit => {
+        if (!hit) fetch(url).then(res => { if (res.ok) cache.put(url, res); });
+      });
+    });
+  });
+}
 
 // Restore last station before anything reads selectedIndex
 const hasRestoredStation = localStorage.getItem('lastRadioIndex') !== null;
@@ -124,13 +138,13 @@ const updateMediaSession = (newState) => {
   const hasError = newState === 'error' || newState === 'recovering';
   const isLive = newState === 'playing';
 
-  const idleText = hasRestoredStation ? title : 'Coji Radio Player';
-  const displayText = isIdle ? idleText : isLoading ? 'Se încarcă...' : hasError ? 'Eroare' : title;
+  const idleText = hasRestoredStation ? title : LABELS.appName;
+  const displayText = isIdle ? idleText : isLoading ? LABELS.loading : hasError ? LABELS.error : title;
 
   if ('mediaSession' in navigator) {
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: isLoading ? `Se încarcă...${title}` : hasError ? `Eroare la încărcarea ${title}` : isIdle ? idleText : title,
-      artist: `Coji Radio Player${isIdle && !hasRestoredStation ? '' : ` | ${title}`}`,
+      title: isLoading ? `${LABELS.loading}${title}` : hasError ? `${LABELS.error} la încărcarea ${title}` : isIdle ? idleText : title,
+      artist: `${LABELS.appName}${isIdle && !hasRestoredStation ? '' : ` | ${title}`}`,
       artwork: [{ src: cloudinaryImageUrl(displayText, isLive) }]
     });
 
@@ -145,8 +159,8 @@ const updateMediaSession = (newState) => {
   }
 
   posterImage.querySelector('img').src = cloudinaryImageUrl(displayText, isLive);
-  document.title = `${isLoading ? "⏳" : ''} ${hasError ? '❤️‍🩹' : ''} ${isLive ? '🔴' : ''} ${isIdle ? idleText : isLoading ? `Se incarca ${title}` : hasError ? 'Eroare' : title}`;
-  loadingMsg.innerText = isLoading ? `Se incarca ${title}...` : '';
+  document.title = `${isLoading ? "⏳" : ''} ${hasError ? '❤️‍🩹' : ''} ${isLive ? '🔴' : ''} ${isIdle ? idleText : isLoading ? `${LABELS.loading} ${title}` : hasError ? LABELS.error : title}`;
+  loadingMsg.innerText = isLoading ? `${LABELS.loading} ${title}` : '';
 };
 
 // --- Create core (state machine) ---
