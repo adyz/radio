@@ -160,6 +160,7 @@ const core = createRadioCore({
   setTimeout,
   clearTimeout,
   performanceNow:   () => performance.now(),
+  isOnline:          () => navigator.onLine,
 });
 
 // --- Media Session action handlers (registered once, after core exists) ---

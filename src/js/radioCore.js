@@ -41,6 +41,7 @@ export function createRadioCore(deps) {
     setTimeout: _setTimeout,
     clearTimeout: _clearTimeout,
     performanceNow,
+    isOnline,
   } = deps;
 
   const timers = { retry: null, loading: null, recovery: null };
@@ -82,6 +83,14 @@ export function createRadioCore(deps) {
     _clearTimeout(timers.loading);
     _clearTimeout(timers.recovery);
     if (!_isRetry) retryCount = 0;
+
+    // No point trying if offline — go straight to error and auto-recover later
+    if (!isOnline()) {
+      currentPlayId++;
+      setState('error');
+      scheduleRecovery();
+      return;
+    }
 
     const playId = ++currentPlayId;
 
