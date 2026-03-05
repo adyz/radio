@@ -4,12 +4,13 @@
   "main": "index.js",
   "scripts": {
     "test": "vitest run",
-    "build": "node build.mjs",
+    "build": "npm run icons && node build.mjs",
     "start": "http-server \"public\" --port=3000",
     "vercel-build": "npm run build",
     "tailwind": "npx tailwindcss -i ./src/css/input.css -o ./src/css/output.css --watch",
     "watch": "live-server \"src\" --port=3210",
-    "dev": "concurrently \"npm run watch\" \"npm run tailwind\""
+    "dev": "npm run icons && concurrently \"npm run watch\" \"npm run tailwind\"",
+    "icons": "node generate-icons.mjs"
   },
   "author": "",
   "license": "ISC",
@@ -25,6 +26,7 @@
     "fs-extra": "^11.3.0",
     "html-minifier-terser": "^7.2.0",
     "live-server": "^1.2.2",
+    "sharp": "^0.34.5",
     "terser": "^5.39.0",
     "vitest": "^3.2.4"
   }

@@ -2,3 +2,6 @@ node_modules
 public
 .env
 src/css/output.css
+src/images/favicon.png
+src/images/logo.png
+src/images/icons/
