@@ -238,9 +238,9 @@ test.describe('Offline — cached resources', () => {
     await page.evaluate(async () => {
       // SW must be active + controlling the page
       await navigator.serviceWorker.ready;
-      // Wait for pre-cache to finish (3 status images)
+      // Wait for pre-cache to finish (3 status images in 'radio-status')
       for (let i = 0; i < 50; i++) {
-        const cache = await caches.open('radio-images');
+        const cache = await caches.open('radio-status');
         if ((await cache.keys()).length >= 3) return;
         await new Promise(r => setTimeout(r, 100));
       }
@@ -259,12 +259,12 @@ test.describe('Offline — cached resources', () => {
 
     const urls = await page.evaluate(async () => {
       for (let i = 0; i < 50; i++) {
-        const cache = await caches.open('radio-images');
+        const cache = await caches.open('radio-status');
         const keys = await cache.keys();
         if (keys.length >= 3) return keys.map(r => r.url);
         await new Promise(r => setTimeout(r, 100));
       }
-      return (await (await caches.open('radio-images')).keys()).map(r => r.url);
+      return (await (await caches.open('radio-status')).keys()).map(r => r.url);
     });
 
     // Cache API normalizes URLs → spaces become %20

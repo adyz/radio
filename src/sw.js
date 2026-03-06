@@ -3,6 +3,7 @@
 // SW is registered for PWA install support and future use
 
 const CACHE_NAME = 'radio-images';
+const STATUS_CACHE = 'radio-status';
 const MAX_CACHED_IMAGES = 30;
 
 self.addEventListener('install', () => {
@@ -13,10 +14,11 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(
     (async () => {
       // Clean old caches from previous versions
+      const keep = new Set([CACHE_NAME, STATUS_CACHE]);
       const keys = await caches.keys();
       await Promise.all(
         keys
-          .filter(k => k.startsWith('radio-') && k !== CACHE_NAME)
+          .filter(k => !keep.has(k))
           .map(k => caches.delete(k))
       );
       await self.clients.claim();

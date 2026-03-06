@@ -39,10 +39,10 @@ function cloudinaryImageUrl(text, live = false) {
   return `https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:${encoded}/${live ? url_live : url_non_live}`;
 }
 
-// Pre-cache status images into Cache API so they're reliably available offline
+// Pre-cache status images into a dedicated cache (not trimmed by SW)
 const STATUS_IMAGE_TEXTS = Object.values(LABELS);
 if ('caches' in window) {
-  caches.open('radio-images').then(cache => {
+  caches.open('radio-status').then(cache => {
     STATUS_IMAGE_TEXTS.forEach(text => {
       const url = cloudinaryImageUrl(text);
       cache.match(url)
