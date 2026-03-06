@@ -35,7 +35,8 @@ const LABELS = {
 function cloudinaryImageUrl(text, live = false) {
   const url_non_live = 'nndti4oybhdzggf8epvh';
   const url_live = 'rhz6yy4btbqicjqhsy7a';
-  return `https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:${text}/${live ? url_live : url_non_live}`;
+  const encoded = encodeURIComponent(text);
+  return `https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:${encoded}/${live ? url_live : url_non_live}`;
 }
 
 // Pre-cache status images into Cache API so they're reliably available offline
@@ -47,12 +48,12 @@ if ('caches' in window) {
       cache.match(url)
         .then(hit => {
           if (!hit) {
-            return fetch(url, { mode: 'no-cors' }).then(res => {
-              if (res.ok || res.type === 'opaque') return cache.put(url, res);
+            return fetch(url).then(res => {
+              if (res.ok) return cache.put(url, res);
             });
           }
         })
-        .catch(() => { /* offline or CORS — ignore, SW will cache on next online visit */ });
+        .catch(() => { /* offline or network error — SW will cache on next online visit */ });
     });
   }).catch(() => { /* cache API unavailable */ });
 }
@@ -137,6 +138,8 @@ const showButton = (which) => {
   stopButton.classList.toggle('hidden', which !== 'stop');
 };
 
+let lastPosterUrl = '';
+
 const updateMediaSession = (newState) => {
   const title = radioSelect.options[radioSelect.selectedIndex].text;
   const isIdle = newState === 'idle';
@@ -146,12 +149,13 @@ const updateMediaSession = (newState) => {
 
   const idleText = hasRestoredStation ? title : LABELS.appName;
   const displayText = isIdle ? idleText : isLoading ? LABELS.loading : hasError ? LABELS.error : title;
+  const posterUrl = cloudinaryImageUrl(displayText, isLive);
 
   if ('mediaSession' in navigator) {
     navigator.mediaSession.metadata = new MediaMetadata({
       title: isLoading ? `${LABELS.loading}${title}` : hasError ? `${LABELS.error} la încărcarea ${title}` : isIdle ? idleText : title,
       artist: `${LABELS.appName}${isIdle && !hasRestoredStation ? '' : ` | ${title}`}`,
-      artwork: [{ src: cloudinaryImageUrl(displayText, isLive) }]
+      artwork: [{ src: posterUrl }]
     });
 
     // Action handlers are registered once after core init (see below)
@@ -164,7 +168,12 @@ const updateMediaSession = (newState) => {
     }
   }
 
-  posterImage.querySelector('img').src = cloudinaryImageUrl(displayText, isLive);
+  // Only update img.src when the URL actually changes to avoid duplicate network requests
+  if (posterUrl !== lastPosterUrl) {
+    posterImage.querySelector('img').src = posterUrl;
+    lastPosterUrl = posterUrl;
+  }
+
   document.title = `${isLoading ? "⏳" : ''} ${hasError ? '❤️‍🩹' : ''} ${isLive ? '🔴' : ''} ${isIdle ? idleText : isLoading ? `${LABELS.loading} ${title}` : hasError ? LABELS.error : title}`;
   loadingMsg.innerText = isLoading ? `${LABELS.loading} ${title}` : '';
 };

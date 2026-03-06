@@ -43,7 +43,7 @@ self.addEventListener('fetch', (event) => {
       try {
         const response = await fetch(event.request);
 
-        if (response.ok || response.type === 'opaque') {
+        if (response.ok) {
           const clone = response.clone();
           event.waitUntil(
             (async () => {
