@@ -224,89 +224,62 @@ test.describe('Offline — cached resources', () => {
     error:   'Eroare',
   };
 
-  // Minimal valid 1×1 PNG so Cache API stores a renderable image
+  // Minimal valid 1×1 PNG so fetch().blob() produces a renderable image
   const PIXEL_PNG = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
     'base64',
   );
 
-  /** Play the default station, wait for playing state, and ensure SW + cache are ready. */
-  async function playAndWaitForCache(page) {
-    await page.locator('#playButton').click();
-    await expect(page.locator('#pauseButton')).toBeVisible({ timeout: 8000 });
-
-    await page.evaluate(async () => {
-      // SW must be active + controlling the page
-      await navigator.serviceWorker.ready;
-      // Wait for pre-cache to finish (3 status images in 'radio-status')
-      for (let i = 0; i < 50; i++) {
-        const cache = await caches.open('radio-status');
-        if ((await cache.keys()).length >= 3) return;
-        await new Promise(r => setTimeout(r, 100));
-      }
-    });
-  }
-
   // --- Images ---
 
-  test('all 3 status images are pre-cached on page load', async ({ page }) => {
-    await page.route(/res\.cloudinary\.com/, (route) =>
-      route.fulfill({ status: 200, contentType: 'image/png', body: PIXEL_PNG }));
-
-    await page.goto('/');
-    // SW controllerchange triggers page reload on first visit — wait for load to settle
-    await page.waitForLoadState('load');
-    // Give SW time to activate + trigger reload, then wait for that reload to finish
-    try { await page.waitForNavigation({ timeout: 3000 }); } catch (_) { /* no reload = already settled */ }
-    await page.waitForLoadState('load');
-
-    const urls = await page.evaluate(async () => {
-      for (let i = 0; i < 50; i++) {
-        const cache = await caches.open('radio-status');
-        const keys = await cache.keys();
-        if (keys.length >= 3) return keys.map(r => r.url);
-        await new Promise(r => setTimeout(r, 100));
-      }
-      return (await (await caches.open('radio-status')).keys()).map(r => r.url);
+  test('all 3 status images are fetched for blob preload on page load', async ({ page }) => {
+    const fetchedUrls = [];
+    await page.route(/res\.cloudinary\.com/, (route) => {
+      fetchedUrls.push(route.request().url());
+      route.fulfill({ status: 200, contentType: 'image/png', body: PIXEL_PNG });
     });
 
-    // Cache API normalizes URLs → spaces become %20
+    await page.goto('/');
+    await page.waitForTimeout(2000);
+
     for (const text of Object.values(LABELS)) {
       const encoded = encodeURIComponent(text);
-      expect(urls.some(u => u.includes(encoded)), `cache should contain image for "${text}"`).toBe(true);
+      expect(fetchedUrls.some(u => u.includes(encoded)),
+        `should fetch image for "${text}"`).toBe(true);
     }
   });
 
-  test('error and idle images render offline via SW cache', async ({ page }) => {
+  test('error and idle images render offline via blob URLs', async ({ page }) => {
     await page.route(/res\.cloudinary\.com/, (route) =>
       route.fulfill({ status: 200, contentType: 'image/png', body: PIXEL_PNG }));
     await mockStreams(page);
 
     await page.goto('/');
-    await playAndWaitForCache(page);
 
-    // Remove all mocks so Cloudinary requests go through the SW
-    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    // Play a station so blobs have time to preload in the background
+    await page.locator('#playButton').click();
+    await expect(page.locator('#pauseButton')).toBeVisible({ timeout: 8000 });
+    await page.waitForTimeout(2000);
+
     await page.context().setOffline(true);
 
-    // --- Error image ---
-    // nextButton → playRadio → isOnline()=false → error state immediately
+    // --- Error image (nextButton offline → error state) ---
     await page.locator('#nextButton').click();
     await expect(page.locator('#errorMsg')).not.toHaveClass(/invisible/, { timeout: 3000 });
 
-    // getAttribute('src') returns the URL with encoded text (encodeURIComponent in cloudinaryImageUrl)
-    expect(await page.locator('#posterImage img').getAttribute('src')).toContain(encodeURIComponent(LABELS.error));
+    const errorSrc = await page.locator('#posterImage img').getAttribute('src');
+    expect(errorSrc).toMatch(/^blob:/);
     await page.waitForFunction(() => {
       const img = document.querySelector('#posterImage img');
       return img.complete && img.naturalWidth > 0;
     }, { timeout: 5000 });
 
-    // --- Idle / default image ---
-    // stop → idle (hasRestoredStation=false in fresh context → shows "Coji Radio Player")
+    // --- Idle / default image (stop → idle with no restored station) ---
     await page.locator('#stopButton').click();
     await expect(page.locator('#playButton')).toBeVisible();
 
-    expect(await page.locator('#posterImage img').getAttribute('src')).toContain(encodeURIComponent(LABELS.appName));
+    const idleSrc = await page.locator('#posterImage img').getAttribute('src');
+    expect(idleSrc).toMatch(/^blob:/);
     await page.waitForFunction(() => {
       const img = document.querySelector('#posterImage img');
       return img.complete && img.naturalWidth > 0;

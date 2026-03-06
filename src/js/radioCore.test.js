@@ -63,6 +63,7 @@ function makeDeps(overrides = {}) {
     // test helpers
     _setPlayerPlayResult: (p) => { playerPlayResult = p; },
     performanceNow: () => calls.now,
+    isOnline: () => true,
     ...overrides,
   };
 

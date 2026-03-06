@@ -39,23 +39,21 @@ function cloudinaryImageUrl(text, live = false) {
   return `https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:${encoded}/${live ? url_live : url_non_live}`;
 }
 
-// Pre-cache status images into a dedicated cache (not trimmed by SW)
-const STATUS_IMAGE_TEXTS = Object.values(LABELS);
-if ('caches' in window) {
-  caches.open('radio-status').then(cache => {
-    STATUS_IMAGE_TEXTS.forEach(text => {
-      const url = cloudinaryImageUrl(text);
-      cache.match(url)
-        .then(hit => {
-          if (!hit) {
-            return fetch(url).then(res => {
-              if (res.ok) return cache.put(url, res);
-            });
-          }
-        })
-        .catch(() => { /* offline or network error — SW will cache on next online visit */ });
-    });
-  }).catch(() => { /* cache API unavailable */ });
+// Pre-fetch status images as blob URLs (same proven pattern as audio blobs).
+// Blob URLs work offline without relying on Cache API or SW fetch.
+const statusBlobUrls = {};
+Object.values(LABELS).forEach(text => {
+  const url = cloudinaryImageUrl(text);
+  fetch(url)
+    .then(res => res.ok ? res.blob() : null)
+    .then(blob => { if (blob) statusBlobUrls[url] = URL.createObjectURL(blob); })
+    .catch(() => {});
+});
+
+// Resolve poster URL: use blob if available, else Cloudinary URL
+function resolvePosterUrl(text, live) {
+  const url = cloudinaryImageUrl(text, live);
+  return statusBlobUrls[url] || url;
 }
 
 // Restore last station before anything reads selectedIndex
@@ -64,9 +62,7 @@ if (hasRestoredStation) {
   radioSelect.selectedIndex = parseInt(localStorage.getItem('lastRadioIndex'), 10);
 }
 
-// --- Audio instances (lazy blob preload) ---
-
-let blobsPreloaded = false;
+// --- Audio instances ---
 
 function audioInstance(htmlElement) {
   let initialSrc = htmlElement.querySelector('source').src;
@@ -100,7 +96,7 @@ function audioInstance(htmlElement) {
     stop() {
       if (isPlaying) {
         htmlElement.pause();
-        htmlElement.src = '';
+        htmlElement.currentTime = 0;
         isPlaying = false;
       }
     },
@@ -122,12 +118,14 @@ function audioInstance(htmlElement) {
 const loadingNoiseInstance = audioInstance(loadingNoise);
 const errorNoiseInstance = audioInstance(errorNoise);
 
-// Preload audio blobs on first user interaction (not at page load)
+// Pre-fetch audio blobs eagerly at page load (same pattern as status image blobs).
+// Must complete before user goes offline so sounds work without network.
+loadingNoiseInstance.preloadBlob();
+errorNoiseInstance.preloadBlob();
+
+// warmUp on first interaction (iOS audio unlock) — kept separate from preload
 function preloadAudioBlobs() {
-  if (blobsPreloaded) return;
-  blobsPreloaded = true;
-  loadingNoiseInstance.preloadBlob();
-  errorNoiseInstance.preloadBlob();
+  // no-op now — blobs are preloaded at module init above
 }
 
 // --- UI helpers ---
@@ -168,10 +166,20 @@ const updateMediaSession = (newState) => {
     }
   }
 
-  // Only update img.src when the URL actually changes to avoid duplicate network requests
-  if (posterUrl !== lastPosterUrl) {
-    posterImage.querySelector('img').src = posterUrl;
-    lastPosterUrl = posterUrl;
+  // Use blob URL for status images (works offline), Cloudinary URL for station posters
+  const imgSrc = resolvePosterUrl(displayText, isLive);
+  if (imgSrc !== lastPosterUrl) {
+    const imgEl = posterImage.querySelector('img');
+    imgEl.onerror = () => {
+      // Offline fallback: if Cloudinary URL fails, use app name blob
+      const fallback = statusBlobUrls[cloudinaryImageUrl(LABELS.appName)];
+      if (fallback && imgEl.src !== fallback) {
+        imgEl.src = fallback;
+        lastPosterUrl = fallback;
+      }
+    };
+    imgEl.src = imgSrc;
+    lastPosterUrl = imgSrc;
   }
 
   document.title = `${isLoading ? "⏳" : ''} ${hasError ? '❤️‍🩹' : ''} ${isLive ? '🔴' : ''} ${isIdle ? idleText : isLoading ? `${LABELS.loading} ${title}` : hasError ? LABELS.error : title}`;
