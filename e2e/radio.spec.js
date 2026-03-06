@@ -254,8 +254,11 @@ test.describe('Offline — cached resources', () => {
       route.fulfill({ status: 200, contentType: 'image/png', body: PIXEL_PNG }));
 
     await page.goto('/');
-    // SW controllerchange triggers page reload on first visit — wait for it
-    await page.waitForTimeout(2000);
+    // SW controllerchange triggers page reload on first visit — wait for load to settle
+    await page.waitForLoadState('load');
+    // Give SW time to activate + trigger reload, then wait for that reload to finish
+    try { await page.waitForNavigation({ timeout: 3000 }); } catch (_) { /* no reload = already settled */ }
+    await page.waitForLoadState('load');
 
     const urls = await page.evaluate(async () => {
       for (let i = 0; i < 50; i++) {

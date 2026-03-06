@@ -60,8 +60,16 @@ self.addEventListener('fetch', (event) => {
 
         return response;
       } catch (_) {
-        const cached = await caches.match(event.request);
-        return cached || Response.error();
+        // Explicitly search both caches with ignoreVary to avoid
+        // Safari/WebKit issues with global caches.match() and Vary headers
+        const opts = { ignoreVary: true };
+        const statusCache = await caches.open(STATUS_CACHE);
+        const hit = await statusCache.match(event.request, opts);
+        if (hit) return hit;
+
+        const imgCache = await caches.open(CACHE_NAME);
+        const hit2 = await imgCache.match(event.request, opts);
+        return hit2 || Response.error();
       }
     })()
   );
