@@ -216,21 +216,11 @@ const updateMediaSession = (newState) => {
     // Keep session alive during loading/error (sounds are playing via <audio>)
     navigator.mediaSession.playbackState = (isLive || isLoading || hasError) ? 'playing' : newState === 'paused' ? 'paused' : 'none';
 
-    // Live streams: override positionState so the OS doesn't show a finite
-    // progress bar (e.g. "1:00") taken from the <audio> element's buffer.
-    // Infinity is rejected by the spec → use a huge finite number (≈ 277 hours).
-    // On idle/paused we clear it entirely.
-    try {
-      if (isLive || isLoading || hasError) {
-        navigator.mediaSession.setPositionState({
-          duration: 1e6,
-          playbackRate: 1,
-          position: 0,
-        });
-      } else {
-        navigator.mediaSession.setPositionState();
-      }
-    } catch (_) {}
+    // Clear position state for live/paused — tells the OS there's no seekable
+    // timeline, so it won't show a finite progress bar.
+    if (isLive || newState === 'paused') {
+      try { navigator.mediaSession.setPositionState(); } catch (_) {}
+    }
   }
 
   posterImage.querySelector('img').src = cloudinaryImageUrl(displayText, isLive);
@@ -324,19 +314,6 @@ player.addEventListener('pause', () => {
 
 // Stream failure during playback (lost WiFi, server died, etc.)
 player.addEventListener('error', () => core.onPlayerError());
-
-// When the <audio> element reports a new duration (buffer size on live streams),
-// macOS/iOS Now Playing overwrites our setPositionState.  Fight back by
-// re-asserting a huge duration so the OS never shows a finite progress bar.
-player.addEventListener('durationchange', () => {
-  if (!('mediaSession' in navigator) || !core) return;
-  const s = core.getState();
-  if (s === 'playing' || s === 'loading' || s === 'retrying' || s === 'error' || s === 'recovering') {
-    try {
-      navigator.mediaSession.setPositionState({ duration: 1e6, playbackRate: 1, position: 0 });
-    } catch (_) {}
-  }
-});
 
 player.addEventListener('stalled', () => {
   const playIdAtStall = core._getPlayId();
