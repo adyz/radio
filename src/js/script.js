@@ -202,22 +202,17 @@ const updateMediaSession = (newState) => {
     });
 
     // Re-register ALL action handlers on every state transition.
-    // iOS resets them when a different <audio> element (loading/error sound)
-    // becomes the active "now playing" source.
     console.log(`[mediaSession] registering handlers — state: ${newState}, core: ${!!core}`);
     if (core) {
-      navigator.mediaSession.setActionHandler('previoustrack', () => { console.log(`[mediaSession] previoustrack fired — station: ${radioSelect.options[radioSelect.selectedIndex].text}, state: ${core.getState?.() ?? 'unknown'}`); core.prevRadio(); });
-      navigator.mediaSession.setActionHandler('nexttrack', () => { console.log(`[mediaSession] nexttrack fired — station: ${radioSelect.options[radioSelect.selectedIndex].text}, state: ${core.getState?.() ?? 'unknown'}`); core.nextRadio(); });
-      navigator.mediaSession.setActionHandler('pause', () => { console.log(`[mediaSession] pause fired — station: ${radioSelect.options[radioSelect.selectedIndex].text}, state: ${core.getState?.() ?? 'unknown'}`); core.pauseRadio(); });
-      navigator.mediaSession.setActionHandler('play', () => { console.log(`[mediaSession] play fired — station: ${radioSelect.options[radioSelect.selectedIndex].text}, state: ${core.getState?.() ?? 'unknown'}`); core.resumeRadio(); });
+      navigator.mediaSession.setActionHandler('previoustrack', () => { core.prevRadio(); });
+      navigator.mediaSession.setActionHandler('nexttrack', () => { core.nextRadio(); });
+      navigator.mediaSession.setActionHandler('pause', () => { core.pauseRadio(); });
+      navigator.mediaSession.setActionHandler('play', () => { core.resumeRadio(); });
       navigator.mediaSession.setActionHandler('seekbackward', null);
       navigator.mediaSession.setActionHandler('seekforward', null);
     }
 
-    // Keep session alive during loading/error (sounds are playing via <audio>)
     navigator.mediaSession.playbackState = (isLive || isLoading || hasError) ? 'playing' : newState === 'paused' ? 'paused' : 'none';
-
-    // Always clear position state — live streams aren't seekable.
     try { navigator.mediaSession.setPositionState(); } catch (_) {}
   }
 
