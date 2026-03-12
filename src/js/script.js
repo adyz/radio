@@ -123,9 +123,12 @@ const errorNoiseInstance = audioInstance(errorNoise);
 // When loading/error sounds start playing, iOS hands media session to that
 // <audio> element and resets all action handlers.  Re-register them here so
 // the lock-screen shows prev/next instead of skip ±10 s.
+// Also force playbackState='playing' so macOS doesn't briefly show "Not Playing"
+// in the gap between pausing the main player and the sound effect producing audio.
 function reRegisterMediaSessionHandlers() {
   if (!('mediaSession' in navigator) || !core) return;
   console.log('[mediaSession] re-registering handlers after sound effect play');
+  navigator.mediaSession.playbackState = 'playing';
   navigator.mediaSession.setActionHandler('previoustrack', () => { console.log(`[mediaSession] previoustrack fired — station: ${radioSelect.options[radioSelect.selectedIndex].text}, state: ${core.getState?.() ?? 'unknown'}`); core.prevRadio(); });
   navigator.mediaSession.setActionHandler('nexttrack', () => { console.log(`[mediaSession] nexttrack fired — station: ${radioSelect.options[radioSelect.selectedIndex].text}, state: ${core.getState?.() ?? 'unknown'}`); core.nextRadio(); });
   navigator.mediaSession.setActionHandler('pause', () => { console.log(`[mediaSession] pause fired — station: ${radioSelect.options[radioSelect.selectedIndex].text}, state: ${core.getState?.() ?? 'unknown'}`); core.pauseRadio(); });
@@ -134,7 +137,9 @@ function reRegisterMediaSessionHandlers() {
   navigator.mediaSession.setActionHandler('seekforward', null);
 }
 loadingNoise.addEventListener('play', reRegisterMediaSessionHandlers);
+loadingNoise.addEventListener('playing', reRegisterMediaSessionHandlers);
 errorNoise.addEventListener('play', reRegisterMediaSessionHandlers);
+errorNoise.addEventListener('playing', reRegisterMediaSessionHandlers);
 
 // Preload audio blobs on first user interaction (not at page load)
 function preloadAudioBlobs() {
