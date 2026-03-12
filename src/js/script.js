@@ -88,6 +88,7 @@ function audioInstance(htmlElement) {
     play() {
       if (!isPlaying) {
         const gen = ++playGeneration;
+        htmlElement.volume = 1;
         htmlElement.src = blobUrl || initialSrc;
         htmlElement.currentTime = 0;
         isPlaying = true;
@@ -99,10 +100,18 @@ function audioInstance(htmlElement) {
       }
     },
     stop() {
-      htmlElement.pause();
-      htmlElement.src = '';
+      // Mute immediately (user hears nothing) but keep the element "playing"
+      // for 300ms so macOS doesn't flash "Not Playing" in the gap before it
+      // picks up the main player's audio output.
+      htmlElement.volume = 0;
+      const gen = ++playGeneration;
       isPlaying = false;
-      playGeneration++;
+      setTimeout(() => {
+        if (gen !== playGeneration) return; // a new play() started — don't kill it
+        htmlElement.pause();
+        htmlElement.src = '';
+        htmlElement.volume = 1;
+      }, 300);
     },
     warmUp() {
       if (!isPlaying) {
