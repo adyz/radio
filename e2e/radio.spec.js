@@ -67,7 +67,15 @@ test.describe('Radio Player E2E', () => {
   });
 
   test('clicking stop returns to idle', async ({ page }) => {
-    await mockStreams(page);
+    // Delay stream response so loading state lasts long enough to click stop
+    await page.route(/live\.kissfm|europafm|digifm|magicfm|virginradio|srr\.ro|profm|rockfm|guerrillaradio|nationalfm|dancefm|radiovibefm|radioprob|vanillaradio/, async (route) => {
+      await new Promise(r => setTimeout(r, 2000));
+      await route.fulfill({
+        status: 200,
+        contentType: 'audio/mpeg',
+        path: 'src/sounds/test-tone.mp3',
+      });
+    });
     await page.goto('/');
 
     await page.locator('#playButton').click();
@@ -232,7 +240,7 @@ test.describe('Offline — cached resources', () => {
 
   // --- Images ---
 
-  test('all 3 status images are fetched for blob preload on page load', async ({ page }) => {
+  test('all 3 status images are pre-cached on page load', async ({ page }) => {
     const fetchedUrls = [];
     await page.route(/res\.cloudinary\.com/, (route) => {
       fetchedUrls.push(route.request().url());
@@ -244,19 +252,19 @@ test.describe('Offline — cached resources', () => {
 
     for (const text of Object.values(LABELS)) {
       const encoded = encodeURIComponent(text);
-      expect(fetchedUrls.some(u => u.includes(encoded)),
+      expect(fetchedUrls.some(u => u.includes(text) || u.includes(encoded)),
         `should fetch image for "${text}"`).toBe(true);
     }
   });
 
-  test('error and idle images render offline via blob URLs', async ({ page }) => {
+  test('error and idle images render offline via SW cache', async ({ page }) => {
     await page.route(/res\.cloudinary\.com/, (route) =>
       route.fulfill({ status: 200, contentType: 'image/png', body: PIXEL_PNG }));
     await mockStreams(page);
 
     await page.goto('/');
 
-    // Play a station so blobs have time to preload in the background
+    // Play a station so images have time to be cached via Cache API / SW
     await page.locator('#playButton').click();
     await expect(page.locator('#pauseButton')).toBeVisible({ timeout: 8000 });
     await page.waitForTimeout(2000);
@@ -267,8 +275,7 @@ test.describe('Offline — cached resources', () => {
     await page.locator('#nextButton').click();
     await expect(page.locator('#errorMsg')).not.toHaveClass(/invisible/, { timeout: 3000 });
 
-    const errorSrc = await page.locator('#posterImage img').getAttribute('src');
-    expect(errorSrc).toMatch(/^blob:/);
+    // Image should still load offline (served from SW cache)
     await page.waitForFunction(() => {
       const img = document.querySelector('#posterImage img');
       return img.complete && img.naturalWidth > 0;
@@ -278,8 +285,6 @@ test.describe('Offline — cached resources', () => {
     await page.locator('#stopButton').click();
     await expect(page.locator('#playButton')).toBeVisible();
 
-    const idleSrc = await page.locator('#posterImage img').getAttribute('src');
-    expect(idleSrc).toMatch(/^blob:/);
     await page.waitForFunction(() => {
       const img = document.querySelector('#posterImage img');
       return img.complete && img.naturalWidth > 0;
