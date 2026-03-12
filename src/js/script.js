@@ -63,90 +63,85 @@ if (hasRestoredStation) {
   radioSelect.selectedIndex = parseInt(localStorage.getItem('lastRadioIndex'), 10);
 }
 
-// --- Audio instances (lazy blob preload) ---
+// --- Sound effects via Web Audio API ---
+// Using AudioBufferSourceNode instead of <audio> elements so they don't
+// hijack MediaSession on iOS (which would show skip ±10s instead of prev/next).
 
 let blobsPreloaded = false;
-
-// Route effect sounds through AudioContext so they don't hijack MediaSession.
-// Without this, iOS sees the loading/error audio (finite duration) as active media
-// and shows skip ±10s controls instead of prev/next.
-// Created lazily on first user gesture (AudioContext requires it on most browsers).
 let audioCtx = null;
+
 function getAudioCtx() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   return audioCtx;
 }
 
-function audioInstance(htmlElement) {
-  let initialSrc = htmlElement.querySelector('source').src;
+function webAudioInstance(srcUrl) {
+  let audioBuffer = null;
+  let sourceNode = null;
   let isPlaying = false;
-  let blobUrl = null;
-  let playGeneration = 0;
-  let connectedToCtx = false;
-
-  function ensureAudioCtx() {
-    if (!connectedToCtx) {
-      connectedToCtx = true;
-      const ctx = getAudioCtx();
-      const source = ctx.createMediaElementSource(htmlElement);
-      source.connect(ctx.destination);
-    }
-  }
+  let loop = true;
 
   const preloadBlob = () => {
-    if (blobUrl) return; // already loaded
-    fetch(initialSrc)
-      .then(r => r.blob())
-      .then(blob => {
-        blobUrl = URL.createObjectURL(blob);
-      })
-      .catch(err => {
-        console.warn('Audio blob preload failed, using network src:', initialSrc, err);
-      });
+    if (audioBuffer) return;
+    fetch(srcUrl)
+      .then(r => r.arrayBuffer())
+      .then(buf => getAudioCtx().decodeAudioData(buf))
+      .then(decoded => { audioBuffer = decoded; })
+      .catch(err => console.warn('Audio preload failed:', srcUrl, err));
   };
 
   return {
     play() {
-      if (!isPlaying) {
-        ensureAudioCtx();
-        if (getAudioCtx().state === 'suspended') getAudioCtx().resume();
-        const gen = ++playGeneration;
-        htmlElement.src = blobUrl || initialSrc;
-        htmlElement.currentTime = 0;
-        isPlaying = true;
-        htmlElement.play().catch((error) => {
-          if (gen !== playGeneration) return; // stale promise — ignore
-          if (error.name !== 'AbortError') console.error('Error playing audio:', error);
-          isPlaying = false;
-        });
+      if (isPlaying) return;
+      isPlaying = true;
+      const ctx = getAudioCtx();
+      if (ctx.state === 'suspended') ctx.resume();
+      if (!audioBuffer) {
+        // Buffer not ready yet — fetch inline
+        fetch(srcUrl)
+          .then(r => r.arrayBuffer())
+          .then(buf => ctx.decodeAudioData(buf))
+          .then(decoded => {
+            audioBuffer = decoded;
+            if (isPlaying) this._start();
+          })
+          .catch(() => { isPlaying = false; });
+        return;
       }
+      this._start();
+    },
+    _start() {
+      // Stop previous source if any
+      if (sourceNode) { try { sourceNode.stop(); } catch (_) {} }
+      sourceNode = getAudioCtx().createBufferSource();
+      sourceNode.buffer = audioBuffer;
+      sourceNode.loop = loop;
+      sourceNode.connect(getAudioCtx().destination);
+      sourceNode.start();
+      sourceNode.onended = () => { if (!loop) isPlaying = false; };
     },
     stop() {
-      // Always pause & clear — even if isPlaying is false due to race condition
-      htmlElement.pause();
-      htmlElement.src = '';
       isPlaying = false;
-      playGeneration++; // invalidate any pending play() promise
-    },
-    // iOS requires a user gesture to unlock audio elements.
-    // Call this from any click/tap handler to ensure play() works later.
-    warmUp() {
-      ensureAudioCtx();
-      if (getAudioCtx().state === 'suspended') getAudioCtx().resume();
-      if (!isPlaying) {
-        htmlElement.src = blobUrl || initialSrc;
-        htmlElement.play().then(() => {
-          htmlElement.pause();
-          htmlElement.currentTime = 0;
-        }).catch(() => {});
+      if (sourceNode) {
+        try { sourceNode.stop(); } catch (_) {}
+        sourceNode = null;
       }
     },
+    warmUp() {
+      const ctx = getAudioCtx();
+      if (ctx.state === 'suspended') ctx.resume();
+    },
+    get isPlaying() { return isPlaying; },
+    get isPreloaded() { return audioBuffer !== null; },
     preloadBlob,
   };
 }
 
-const loadingNoiseInstance = audioInstance(loadingNoise);
-const errorNoiseInstance = audioInstance(errorNoise);
+const loadingNoiseInstance = webAudioInstance(loadingNoise.querySelector('source').src);
+const errorNoiseInstance = webAudioInstance(errorNoise.querySelector('source').src);
+
+// Expose for E2E testing
+window.__radioEffects = { loadingNoise: loadingNoiseInstance, errorNoise: errorNoiseInstance };
 
 // Preload audio blobs on first user interaction (not at page load)
 function preloadAudioBlobs() {
