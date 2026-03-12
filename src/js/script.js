@@ -216,8 +216,20 @@ const updateMediaSession = (newState) => {
     // Keep session alive during loading/error (sounds are playing via <audio>)
     navigator.mediaSession.playbackState = (isLive || isLoading || hasError) ? 'playing' : newState === 'paused' ? 'paused' : 'none';
 
-    // Always clear position state — live streams aren't seekable.
-    try { navigator.mediaSession.setPositionState(); } catch (_) {}
+    // Live streams: signal infinite duration so the OS doesn't show a finite
+    // progress bar (e.g. "1:00") taken from the <audio> element's buffer.
+    // On idle/paused we clear it entirely.
+    try {
+      if (isLive || isLoading || hasError) {
+        navigator.mediaSession.setPositionState({
+          duration: Infinity,
+          playbackRate: 1,
+          position: 0,
+        });
+      } else {
+        navigator.mediaSession.setPositionState();
+      }
+    } catch (_) {}
   }
 
   posterImage.querySelector('img').src = cloudinaryImageUrl(displayText, isLive);
