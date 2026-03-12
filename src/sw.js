@@ -1,7 +1,6 @@
 // Service Worker — kept minimal
-// Status images (idle, loading, error) are handled via blob URLs in script.js
-// Audio sounds are also handled via blob URLs in script.js
-// SW caches station poster images for offline use
+// Audio sounds are handled via blob URLs in script.js
+// SW is registered for PWA install support and future use
 
 const CACHE_NAME = 'radio-images';
 const MAX_CACHED_IMAGES = 30;
@@ -17,7 +16,7 @@ self.addEventListener('activate', (event) => {
       const keys = await caches.keys();
       await Promise.all(
         keys
-          .filter(k => k !== CACHE_NAME)
+          .filter(k => k.startsWith('radio-') && k !== CACHE_NAME)
           .map(k => caches.delete(k))
       );
       await self.clients.claim();
@@ -44,7 +43,7 @@ self.addEventListener('fetch', (event) => {
       try {
         const response = await fetch(event.request);
 
-        if (response.ok) {
+        if (response.ok || response.type === 'opaque') {
           const clone = response.clone();
           event.waitUntil(
             (async () => {
@@ -59,9 +58,8 @@ self.addEventListener('fetch', (event) => {
 
         return response;
       } catch (_) {
-        const cache = await caches.open(CACHE_NAME);
-        const hit = await cache.match(event.request, { ignoreVary: true });
-        return hit || Response.error();
+        const cached = await caches.match(event.request);
+        return cached || Response.error();
       }
     })()
   );

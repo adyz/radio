@@ -4,7 +4,6 @@
   "main": "index.js",
   "scripts": {
     "test": "vitest run",
-    "test:e2e": "npx playwright test",
     "build": "node build.mjs",
     "start": "http-server \"public\" --port=3000",
     "vercel-build": "npm run build",
@@ -21,7 +20,6 @@
     "tailwindcss": "^4.0.14"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2",
     "concurrently": "^9.1.2",
     "cpx": "^1.5.0",
     "fs-extra": "^11.3.0",
