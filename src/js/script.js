@@ -216,9 +216,9 @@ const updateMediaSession = (newState) => {
     // Keep session alive during loading/error (sounds are playing via <audio>)
     navigator.mediaSession.playbackState = (isLive || isLoading || hasError) ? 'playing' : newState === 'paused' ? 'paused' : 'none';
 
-    // Clear position state for live/paused — tells the OS there's no seekable
-    // timeline, so it won't show a finite progress bar.
-    if (isLive || newState === 'paused') {
+    // Clear position state for active/paused states — tells the OS there's no
+    // seekable timeline, so it won't show a finite progress bar.
+    if (isLive || isLoading || hasError || newState === 'paused') {
       try { navigator.mediaSession.setPositionState(); } catch (_) {}
     }
   }
