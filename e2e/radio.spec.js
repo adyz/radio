@@ -82,28 +82,6 @@ for (const { name, path } of versions) {
       );
     });
 
-    // TODO [for next AI]:
-    // This test FAILS on v2. The mock audio (test-tone.mp3, ~1.3s) finishes
-    // so fast that the state machine races through loading → playing → paused
-    // before the DOM can settle. bind.js now uses DOM morphing (morph()) and
-    // renders all 3 buttons with a `hidden` attribute toggle (not conditional
-    // render), which should preserve element identity. But the stop button
-    // still gets "detached from the DOM" during Playwright's stability check.
-    //
-    // Root cause hypothesis: the morph algorithm or the reactive effect is
-    // still replacing nodes instead of patching them in-place when multiple
-    // signal changes fire in rapid succession. Possible fixes:
-    //   1. Batch signal updates (transaction/batch API in signals.js) so
-    //      multiple .set() calls produce a single render pass.
-    //   2. Use Playwright's `{ force: true }` on the click to bypass the
-    //      stability check (quick workaround, not ideal).
-    //   3. Add a `waitForFunction` that polls for the stop button's presence
-    //      instead of relying on toBeVisible + click.
-    //   4. Investigate morphChildren — the positional fallback (`oldKids[oi]`)
-    //      may mis-match nodes when the child count changes between renders.
-    //
-    // v1 passes because it uses persistent DOM elements with classList.toggle
-    // ('hidden') — the elements are never removed/recreated.
     test('clicking stop returns to idle', async ({ page }) => {
       await mockStreams(page);
       await page.goto(path);

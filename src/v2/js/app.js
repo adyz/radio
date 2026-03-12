@@ -1,8 +1,9 @@
 /**
- * app.js — Single-template reactive UI.
+ * app.js — Static template + targeted reactive effects.
  *
- * ONE mount() renders the entire page: logo, selector, poster, controls, footer.
- * Non-DOM effects (title, MediaSession, Electron, SW, etc.) live outside the template.
+ * ONE mount() renders the page once (logo, selector, poster, controls, footer).
+ * Individual effect() calls patch the DOM directly (toggle .hidden, .src, .textContent).
+ * Elements are NEVER removed / recreated — only attributes and properties change.
  */
 
 import { signal, effect } from './signals.js';
@@ -58,97 +59,88 @@ const SELECTOR_SVG = /* html */ html`<svg fill="none" stroke="currentColor" stro
 // Shared button class
 const BTN = 'stroke-Red hover:stroke-Brown active:stroke-Brown w-1/3 flex justify-center bg-gradient-to-b hover:from-transparent hover:to-Red/10 active:from-transparent active:to-Red/15 pb-10 pt-10';
 
-// ── Single template ─────────────────────────────────────────────────
+// ── Helpers ─────────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+
+// ── Static template (rendered once) ─────────────────────────────────
+
+const initialIdx = radio.stationIndex.peek() ?? 0;
+
+const stationList = STATIONS.map((s, i) => /* html */ html`
+  <button data-action="selectStation" data-index="${i}"
+    class="w-full text-Brown py-4 text-md hover:bg-Red/20 active:bg-Red/20 border-0 border-b border-Border/50 ${i === initialIdx ? 'bg-Red text-StaticWhite' : ''}">
+    ${s.name}
+  </button>
+`).join('');
 
 mount(
   document.getElementById('app'),
-  () => {
-    const open    = selectorOpen.get();
-    const btn     = radio.visibleButton.get();
-    const loading = radio.isLoading.get();
-    const error   = radio.hasError.get();
-    const idx     = radio.stationIndex.get();
+  /* html */ html`
+    <!-- Logo -->
+    <div class="text-center flex justify-center flex-col relative z-10">
+      ${LOGO_SVG}
+      <h1 class="uppercase text-sm text-Brown mt-6">${L.title}
+        <span class="inline-flex items-center" title="${L.flag}">
+          <span class="sr-only">\ud83c\uddf7\ud83c\uddf4</span>
+          <span class="w-[.5em] h-[0.75em] bg-blue-600 inline-block"></span>
+          <span class="w-[.7em] h-[0.75em] bg-yellow-400 inline-block"></span>
+          <span class="w-[.5em] h-[0.75em] bg-red-600 inline-block"></span>
+        </span>
+      </h1>
+    </div>
 
-    const centerButton = html`
-      <button id="playButton"  data-action="play"  aria-label="${L.play}"  class="${BTN}" ${btn !== 'play'  ? 'hidden' : ''}>${PLAY_SVG}</button>
-      <button id="pauseButton" data-action="pause" aria-label="${L.pause}" class="${BTN}" ${btn !== 'pause' ? 'hidden' : ''}>${PAUSE_SVG}</button>
-      <button id="stopButton"  data-action="stop"  aria-label="${L.stop}"  class="${BTN}" ${btn !== 'stop'  ? 'hidden' : ''}>${STOP_SVG}</button>
-    `;
+    <!-- Main card -->
+    <main class="rounded-3xl shadow-xl w-full max-w-[540px] bg-gradient-to-t from-White to-bg text-white min-h-[calc(100dvh-180px)] flex flex-col align-center justify-end relative">
+      <!-- Gradient overlay -->
+      <div class="absolute top-0 left-0 w-[104%] h-[100%] -m-[2%] bg-gradient-to-b from-Bg to-transparent"></div>
 
-    const stationList = STATIONS.map((s, i) => html`
-      <button data-action="selectStation" data-index="${i}"
-        class="w-full text-Brown py-4 text-md hover:bg-Red/20 active:bg-Red/20 border-0 border-b border-Border/50 ${i === idx ? 'bg-Red text-StaticWhite' : ''}">
-        ${s.name}
-      </button>
-    `).join('');
+      <div>
+        <!-- Selector area -->
+        <div id="selectorArea" class="relative z-20 top-0 left-[11%] w-[78%] h-full">
+          <button id="new_selector__button" data-action="toggleSelector" aria-label="${L.pickStation}"
+            class="position absolute top-22 right-[50%] -mr-19 text-SuperLighterBrown bg-StaticWhite border-[.5px] boder-Broder py-2 rounded-lg scale-75">
+            ${SELECTOR_SVG}
+          </button>
 
-    return /* html */ html`
-      <!-- Logo -->
-      <div class="text-center flex justify-center flex-col relative z-10">
-        ${LOGO_SVG}
-        <h1 class="uppercase text-sm text-Brown mt-6">${L.title}
-          <span class="inline-flex items-center" title="${L.flag}">
-            <span class="sr-only">\ud83c\uddf7\ud83c\uddf4</span>
-            <span class="w-[.5em] h-[0.75em] bg-blue-600 inline-block"></span>
-            <span class="w-[.7em] h-[0.75em] bg-yellow-400 inline-block"></span>
-            <span class="w-[.5em] h-[0.75em] bg-red-600 inline-block"></span>
-          </span>
-        </h1>
-      </div>
-
-      <!-- Main card -->
-      <main class="rounded-3xl shadow-xl w-full max-w-[540px] bg-gradient-to-t from-White to-bg text-white min-h-[calc(100dvh-180px)] flex flex-col align-center justify-end relative">
-        <!-- Gradient overlay -->
-        <div class="absolute top-0 left-0 w-[104%] h-[100%] -m-[2%] bg-gradient-to-b from-Bg to-transparent"></div>
-
-        <div>
-          <!-- Selector area -->
-          <div id="selectorArea" class="relative z-20 top-0 left-[11%] w-[78%] h-full">
-            <button id="new_selector__button" data-action="toggleSelector" aria-label="${L.pickStation}"
-              class="position absolute top-22 right-[50%] -mr-19 text-SuperLighterBrown bg-StaticWhite border-[.5px] boder-Broder py-2 rounded-lg scale-75">
-              ${SELECTOR_SVG}
-            </button>
-
-            ${open ? html`
-              <div data-action="closeSelector" class="fixed inset-0 z-10"></div>
-              <div id="new_selector__content" class="flex overflow-auto flex-col absolute top-0 left-0 w-full h-82 shadow-2xl border border-Border bg-White overscroll-contain rounded-3xl [scrollbar-width:thin] z-20">
-                ${stationList}
-              </div>
-            ` : ''}
-          </div>
-
-          <!-- Poster -->
-          <div id="posterImage" data-action="toggleSelector"
-            class="mx-auto rounded-3xl overflow-hidden w-[128px] h-[128px] bg-Red border border-Border relative z-10 mt-10 cursor-pointer">
-            <img fetchpriority="high" src="${radio.resolvedPosterUrl()}" alt="${L.posterAlt}" class="w-full h-full object-cover">
-          </div>
-
-          <!-- Controls -->
-          <div class="flex items-center justify-center mt-10 relative z-10">
-            <button id="prevButton" data-action="prev" aria-label="${L.prev}" class="${BTN} rounded-bl-3xl">
-              ${PREV_SVG}
-            </button>
-            ${centerButton}
-            <button id="nextButton" data-action="next" aria-label="${L.next}" class="${BTN} rounded-br-3xl">
-              ${NEXT_SVG}
-            </button>
-          </div>
-
-          <!-- Status message -->
-          <div class="relative z-10 w-full text-center text-xs h-6 mt-2">
-            ${loading ? html`<div id="loadingMsg" class="text-Brown">${radio.loadingText.get()}</div>` : ''}
-            ${error   ? html`<div id="errorMsg" class="text-Red">${L.errorMsg}</div>` : ''}
+          <div id="selectorBackdrop" data-action="closeSelector" class="fixed inset-0 z-10" hidden></div>
+          <div id="new_selector__content" class="flex overflow-auto flex-col absolute top-0 left-0 w-full h-82 shadow-2xl border border-Border bg-White overscroll-contain rounded-3xl [scrollbar-width:thin] z-20" hidden>
+            ${stationList}
           </div>
         </div>
-      </main>
 
-      <!-- Footer -->
-      <footer class="text-center text-xs text-Brown mt-8">
-        <p>${L.footer} <span class="opacity-50">(${L.footerVersion})</span></p>
-        <p>${L.copyright} | <a href="${L.authorUrl}" target="_blank" rel="noopener">${L.authorDomain}</a></p>
-      </footer>
-    `;
-  },
+        <!-- Poster -->
+        <div id="posterImage" data-action="toggleSelector"
+          class="mx-auto rounded-3xl overflow-hidden w-[128px] h-[128px] bg-Red border border-Border relative z-10 mt-10 cursor-pointer">
+          <img fetchpriority="high" src="${radio.resolvedPosterUrl()}" alt="${L.posterAlt}" class="w-full h-full object-cover">
+        </div>
+
+        <!-- Controls -->
+        <div class="flex items-center justify-center mt-10 relative z-10">
+          <button id="prevButton" data-action="prev" aria-label="${L.prev}" class="${BTN} rounded-bl-3xl">
+            ${PREV_SVG}
+          </button>
+          <button id="playButton"  data-action="play"  aria-label="${L.play}"  class="${BTN}">${PLAY_SVG}</button>
+          <button id="pauseButton" data-action="pause" aria-label="${L.pause}" class="${BTN}" hidden>${PAUSE_SVG}</button>
+          <button id="stopButton"  data-action="stop"  aria-label="${L.stop}"  class="${BTN}" hidden>${STOP_SVG}</button>
+          <button id="nextButton" data-action="next" aria-label="${L.next}" class="${BTN} rounded-br-3xl">
+            ${NEXT_SVG}
+          </button>
+        </div>
+
+        <!-- Status message -->
+        <div class="relative z-10 w-full text-center text-xs h-6 mt-2">
+          <div id="loadingMsg" class="text-Brown" hidden></div>
+          <div id="errorMsg" class="text-Red" hidden>${L.errorMsg}</div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="text-center text-xs text-Brown mt-8">
+      <p>${L.footer} <span class="opacity-50">(${L.footerVersion})</span></p>
+      <p>${L.copyright} | <a href="${L.authorUrl}" target="_blank" rel="noopener">${L.authorDomain}</a></p>
+    </footer>
+  `,
   {
     toggleSelector: () => {
       const willOpen = !selectorOpen.peek();
@@ -173,6 +165,51 @@ mount(
     next:  () => radio.next(),
   }
 );
+
+// ── Targeted reactive effects (DOM patching) ────────────────────────
+
+// 1. Button visibility
+effect(() => {
+  const btn = radio.visibleButton.get();
+  $('playButton').hidden  = btn !== 'play';
+  $('pauseButton').hidden = btn !== 'pause';
+  $('stopButton').hidden  = btn !== 'stop';
+});
+
+// 2. Poster image
+effect(() => {
+  $('posterImage').querySelector('img').src = radio.resolvedPosterUrl();
+});
+
+// 3. Loading message
+effect(() => {
+  const loading = radio.isLoading.get();
+  const el = $('loadingMsg');
+  el.hidden = !loading;
+  el.textContent = loading ? radio.loadingText.get() : '';
+});
+
+// 4. Error message
+effect(() => {
+  $('errorMsg').hidden = !radio.hasError.get();
+});
+
+// 5. Station list active highlight
+effect(() => {
+  const idx = radio.stationIndex.get();
+  document.querySelectorAll('[data-action="selectStation"]').forEach(btn => {
+    const active = parseInt(btn.dataset.index, 10) === idx;
+    btn.classList.toggle('bg-Red', active);
+    btn.classList.toggle('text-StaticWhite', active);
+  });
+});
+
+// 6. Selector open / close
+effect(() => {
+  const open = selectorOpen.get();
+  $('selectorBackdrop').hidden = !open;
+  $('new_selector__content').hidden = !open;
+});
 
 // ── Non-DOM effects ─────────────────────────────────────────────────
 
