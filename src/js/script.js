@@ -216,13 +216,14 @@ const updateMediaSession = (newState) => {
     // Keep session alive during loading/error (sounds are playing via <audio>)
     navigator.mediaSession.playbackState = (isLive || isLoading || hasError) ? 'playing' : newState === 'paused' ? 'paused' : 'none';
 
-    // Live streams: signal infinite duration so the OS doesn't show a finite
+    // Live streams: override positionState so the OS doesn't show a finite
     // progress bar (e.g. "1:00") taken from the <audio> element's buffer.
+    // Infinity is rejected by the spec → use a huge finite number (≈ 277 hours).
     // On idle/paused we clear it entirely.
     try {
       if (isLive || isLoading || hasError) {
         navigator.mediaSession.setPositionState({
-          duration: Infinity,
+          duration: 1e6,
           playbackRate: 1,
           position: 0,
         });
