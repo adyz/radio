@@ -226,9 +226,28 @@ core = createRadioCore({
   getStationCount:  () => radioSelect.options.length,
   getSelectedIndex: () => radioSelect.selectedIndex,
   setSelectedIndex: (i) => { radioSelect.selectedIndex = i; },
-  playerPlay:       () => player.play(),
-  playerPause:      () => player.pause(),
-  playerSetSrc:     (url) => { player.src = url; },
+  playerPlay:       () => { player.loop = false; return player.play(); },
+  playerPause:      () => {
+    // During loading/retrying/recovering, play silent audio instead of pausing
+    // so macOS/iOS MediaSession never sees the main player stop.
+    const s = core?.getState?.();
+    if (s === 'loading' || s === 'retrying' || s === 'recovering') {
+      player.src = './silent.mp3';
+      player.loop = true;
+      player.play().catch(() => {});
+    } else {
+      player.pause();
+    }
+  },
+  playerSetSrc:     (url) => {
+    player.loop = false;
+    if (!url) {
+      player.pause();
+      player.src = '';
+    } else {
+      player.src = url;
+    }
+  },
   playerLoad:       () => player.load(),
   playerIsPaused:   () => player.paused,
   loadingSound:     loadingNoiseInstance,
