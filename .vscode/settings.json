@@ -2,5 +2,17 @@
   "workbench.editorAssociations": {
     "*svg": "default"
   },
-  "tailwindCSS.experimental.configFile": "./tailwind.config.js"
+  "tailwindCSS.experimental.configFile": "./tailwind.config.js",
+  "tailwindCSS.includeLanguages": {
+    "javascript": "html"
+  },
+  "editor.quickSuggestions": {
+    "strings": "on"
+  },
+  "chat.tools.terminal.autoApprove": {
+    "/^npx playwright test --reporter=line 2>&1 \\| tail -20$/": {
+      "approve": true,
+      "matchCommandLine": true
+    }
+  }
 }
