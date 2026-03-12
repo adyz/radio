@@ -63,85 +63,62 @@ if (hasRestoredStation) {
   radioSelect.selectedIndex = parseInt(localStorage.getItem('lastRadioIndex'), 10);
 }
 
-// --- Sound effects via Web Audio API ---
-// Using AudioBufferSourceNode instead of <audio> elements so they don't
-// hijack MediaSession on iOS (which would show skip ±10s instead of prev/next).
+// --- Sound effects via <audio> elements ---
+// These play through real <audio> elements to keep the iOS MediaSession alive.
+// MediaSession action handlers are re-registered on every state transition to
+// prevent iOS from resetting them when a different <audio> element takes over.
 
 let blobsPreloaded = false;
-let audioCtx = null;
 
-function getAudioCtx() {
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  return audioCtx;
-}
-
-function webAudioInstance(srcUrl) {
-  let audioBuffer = null;
-  let sourceNode = null;
+function audioInstance(htmlElement) {
+  let initialSrc = htmlElement.querySelector('source').src;
   let isPlaying = false;
-  let loop = true;
+  let blobUrl = null;
+  let playGeneration = 0;
 
   const preloadBlob = () => {
-    if (audioBuffer) return;
-    fetch(srcUrl)
-      .then(r => r.arrayBuffer())
-      .then(buf => getAudioCtx().decodeAudioData(buf))
-      .then(decoded => { audioBuffer = decoded; })
-      .catch(err => console.warn('Audio preload failed:', srcUrl, err));
+    if (blobUrl) return;
+    fetch(initialSrc)
+      .then(r => r.blob())
+      .then(blob => { blobUrl = URL.createObjectURL(blob); })
+      .catch(err => console.warn('Audio blob preload failed:', initialSrc, err));
   };
 
   return {
     play() {
-      if (isPlaying) return;
-      isPlaying = true;
-      const ctx = getAudioCtx();
-      if (ctx.state === 'suspended') ctx.resume();
-      if (!audioBuffer) {
-        // Buffer not ready yet — fetch inline
-        fetch(srcUrl)
-          .then(r => r.arrayBuffer())
-          .then(buf => ctx.decodeAudioData(buf))
-          .then(decoded => {
-            audioBuffer = decoded;
-            if (isPlaying) this._start();
-          })
-          .catch(() => { isPlaying = false; });
-        return;
+      if (!isPlaying) {
+        const gen = ++playGeneration;
+        htmlElement.src = blobUrl || initialSrc;
+        htmlElement.currentTime = 0;
+        isPlaying = true;
+        htmlElement.play().catch((error) => {
+          if (gen !== playGeneration) return;
+          if (error.name !== 'AbortError') console.error('Error playing audio:', error);
+          isPlaying = false;
+        });
       }
-      this._start();
-    },
-    _start() {
-      // Stop previous source if any
-      if (sourceNode) { try { sourceNode.stop(); } catch (_) {} }
-      sourceNode = getAudioCtx().createBufferSource();
-      sourceNode.buffer = audioBuffer;
-      sourceNode.loop = loop;
-      sourceNode.connect(getAudioCtx().destination);
-      sourceNode.start();
-      sourceNode.onended = () => { if (!loop) isPlaying = false; };
     },
     stop() {
+      htmlElement.pause();
+      htmlElement.src = '';
       isPlaying = false;
-      if (sourceNode) {
-        try { sourceNode.stop(); } catch (_) {}
-        sourceNode = null;
-      }
+      playGeneration++;
     },
     warmUp() {
-      const ctx = getAudioCtx();
-      if (ctx.state === 'suspended') ctx.resume();
+      if (!isPlaying) {
+        htmlElement.src = blobUrl || initialSrc;
+        htmlElement.play().then(() => {
+          htmlElement.pause();
+          htmlElement.currentTime = 0;
+        }).catch(() => {});
+      }
     },
-    get isPlaying() { return isPlaying; },
-    get isPreloaded() { return audioBuffer !== null; },
     preloadBlob,
   };
 }
 
-const loadingNoiseInstance = webAudioInstance(loadingNoise.querySelector('source').src);
-const errorNoiseInstance = webAudioInstance(errorNoise.querySelector('source').src);
-
-// Expose for E2E testing
-window.__radioEffects = { loadingNoise: loadingNoiseInstance, errorNoise: errorNoiseInstance };
+const loadingNoiseInstance = audioInstance(loadingNoise);
+const errorNoiseInstance = audioInstance(errorNoise);
 
 // Preload audio blobs on first user interaction (not at page load)
 function preloadAudioBlobs() {
@@ -158,6 +135,9 @@ const showButton = (which) => {
   pauseButton.classList.toggle('hidden', which !== 'pause');
   stopButton.classList.toggle('hidden', which !== 'stop');
 };
+
+// core reference — set after createRadioCore(), used by updateMediaSession
+let core = null;
 
 const updateMediaSession = (newState) => {
   const title = radioSelect.options[radioSelect.selectedIndex].text;
@@ -176,13 +156,22 @@ const updateMediaSession = (newState) => {
       artwork: [{ src: cloudinaryImageUrl(displayText, isLive) }]
     });
 
-    // Action handlers are registered once after core init (see below)
-    // to avoid TDZ — updateMediaSession is called during createRadioCore()
+    // Re-register ALL action handlers on every state transition.
+    // iOS resets them when a different <audio> element (loading/error sound)
+    // becomes the active "now playing" source.
+    if (core) {
+      navigator.mediaSession.setActionHandler('previoustrack', () => core.prevRadio());
+      navigator.mediaSession.setActionHandler('nexttrack', () => core.nextRadio());
+      navigator.mediaSession.setActionHandler('pause', () => core.pauseRadio());
+      navigator.mediaSession.setActionHandler('play', () => core.resumeRadio());
+      navigator.mediaSession.setActionHandler('seekbackward', () => { /* no-op: block iOS skip ±10s */ });
+      navigator.mediaSession.setActionHandler('seekforward', () => { /* no-op: block iOS skip ±10s */ });
+    }
 
-    navigator.mediaSession.playbackState = (isLive || isLoading) ? 'playing' : newState === 'paused' ? 'paused' : 'none';
+    // Keep session alive during loading/error (sounds are playing via <audio>)
+    navigator.mediaSession.playbackState = (isLive || isLoading || hasError) ? 'playing' : newState === 'paused' ? 'paused' : 'none';
 
     // Always clear position state — live streams aren't seekable.
-    // Without this, iOS may show skip ±10s controls.
     try { navigator.mediaSession.setPositionState(); } catch (_) {}
   }
 
@@ -191,9 +180,7 @@ const updateMediaSession = (newState) => {
   loadingMsg.innerText = isLoading ? `${LABELS.loading} ${title}` : '';
 };
 
-// --- Create core (state machine) ---
-
-const core = createRadioCore({
+core = createRadioCore({
   getStationUrl:    (i) => radioSelect.options[i].value,
   getStationCount:  () => radioSelect.options.length,
   getSelectedIndex: () => radioSelect.selectedIndex,
@@ -215,17 +202,6 @@ const core = createRadioCore({
   performanceNow:   () => performance.now(),
   isOnline:          () => navigator.onLine,
 });
-
-// --- Media Session action handlers (registered once, after core exists) ---
-if ('mediaSession' in navigator) {
-  navigator.mediaSession.setActionHandler('previoustrack', () => core.prevRadio());
-  navigator.mediaSession.setActionHandler('nexttrack', () => core.nextRadio());
-  navigator.mediaSession.setActionHandler('pause', () => core.pauseRadio());
-  navigator.mediaSession.setActionHandler('play', () => core.resumeRadio());
-  // Claim seek handlers with no-op so iOS shows prev/next instead of skip ±10s
-  navigator.mediaSession.setActionHandler('seekbackward', () => { /* no-op */ });
-  navigator.mediaSession.setActionHandler('seekforward', () => { /* no-op */ });
-}
 
 // --- Event listeners ---
 

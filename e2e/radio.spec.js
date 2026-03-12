@@ -14,7 +14,7 @@ async function mockStreams(page) {
 // Helper: intercept streams and respond with an error
 async function mockStreamsError(page) {
   await page.route(/live\.kissfm|europafm|digifm|magicfm|virginradio|srr\.ro|profm|rockfm|guerrillaradio|nationalfm|dancefm|radiovibefm|radioprob|vanillaradio/, (route) => {
-    route.fulfill({ status: 404, contentType: 'text/plain', body: 'Not Found' });
+    route.abort('internetdisconnected');
   });
 }
 
@@ -303,25 +303,25 @@ test.describe('Offline — cached resources', () => {
     await page.locator('#playButton').click();
     await expect(page.locator('#pauseButton')).toBeVisible({ timeout: 8000 });
 
-    // Wait for Web Audio buffer preload to finish
+    // Wait for blob preload to finish
     await page.waitForTimeout(2000);
 
     await page.context().setOffline(true);
 
-    // nextButton → offline → error → errorSound.play() via Web Audio API
+    // nextButton → offline → error → errorSound.play() from blob
     await page.locator('#nextButton').click();
     await expect(page.locator('#errorMsg')).not.toHaveClass(/invisible/, { timeout: 3000 });
 
     // Give audio time to start
     await page.waitForTimeout(300);
 
-    const { isPlaying, isPreloaded } = await page.evaluate(() => {
-      const fx = window.__radioEffects;
-      return { isPlaying: fx.errorNoise.isPlaying, isPreloaded: fx.errorNoise.isPreloaded };
+    const { paused, src } = await page.evaluate(() => {
+      const el = document.getElementById('errorNoise');
+      return { paused: el.paused, src: el.src };
     });
 
-    expect(isPreloaded).toBe(true);
-    expect(isPlaying).toBe(true);
+    expect(paused).toBe(false);
+    expect(src).toMatch(/^blob:/);
   });
 
   test('loading sound plays from preloaded blob', async ({ page }) => {
@@ -346,7 +346,7 @@ test.describe('Offline — cached resources', () => {
     await page.locator('#playButton').click();
     await expect(page.locator('#pauseButton')).toBeVisible({ timeout: 8000 });
 
-    // Wait for Web Audio buffer preload to finish
+    // Wait for blob preload to finish
     await page.waitForTimeout(2000);
 
     // Block stream so next station stays in loading state
@@ -357,12 +357,12 @@ test.describe('Offline — cached resources', () => {
 
     await page.waitForTimeout(300);
 
-    const { isPlaying, isPreloaded } = await page.evaluate(() => {
-      const fx = window.__radioEffects;
-      return { isPlaying: fx.loadingNoise.isPlaying, isPreloaded: fx.loadingNoise.isPreloaded };
+    const { paused, src } = await page.evaluate(() => {
+      const el = document.getElementById('loadingNoise');
+      return { paused: el.paused, src: el.src };
     });
 
-    expect(isPreloaded).toBe(true);
-    expect(isPlaying).toBe(true);
+    expect(paused).toBe(false);
+    expect(src).toMatch(/^blob:/);
   });
 });
