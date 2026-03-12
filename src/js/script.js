@@ -278,9 +278,10 @@ player.addEventListener('pause', () => {
 // Stream failure during playback (lost WiFi, server died, etc.)
 player.addEventListener('error', () => core.onPlayerError());
 player.addEventListener('stalled', () => {
-  // 'stalled' fires when data stops arriving — give it a few seconds before treating as error
+  const playIdAtStall = core._getPlayId();
   const stalledTimeout = setTimeout(() => {
-    if (core.getState() === 'playing') core.onPlayerError();
+    // Only treat as error if we're still on the same stream
+    if (core._getPlayId() === playIdAtStall && core.getState() === 'playing') core.onPlayerError();
   }, 5000);
   player.addEventListener('playing', () => clearTimeout(stalledTimeout), { once: true });
 });
