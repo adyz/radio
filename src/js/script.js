@@ -67,11 +67,31 @@ if (hasRestoredStation) {
 
 let blobsPreloaded = false;
 
+// Route effect sounds through AudioContext so they don't hijack MediaSession.
+// Without this, iOS sees the loading/error audio (finite duration) as active media
+// and shows skip ±10s controls instead of prev/next.
+// Created lazily on first user gesture (AudioContext requires it on most browsers).
+let audioCtx = null;
+function getAudioCtx() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  return audioCtx;
+}
+
 function audioInstance(htmlElement) {
   let initialSrc = htmlElement.querySelector('source').src;
   let isPlaying = false;
   let blobUrl = null;
   let playGeneration = 0;
+  let connectedToCtx = false;
+
+  function ensureAudioCtx() {
+    if (!connectedToCtx) {
+      connectedToCtx = true;
+      const ctx = getAudioCtx();
+      const source = ctx.createMediaElementSource(htmlElement);
+      source.connect(ctx.destination);
+    }
+  }
 
   const preloadBlob = () => {
     if (blobUrl) return; // already loaded
@@ -88,6 +108,8 @@ function audioInstance(htmlElement) {
   return {
     play() {
       if (!isPlaying) {
+        ensureAudioCtx();
+        if (getAudioCtx().state === 'suspended') getAudioCtx().resume();
         const gen = ++playGeneration;
         htmlElement.src = blobUrl || initialSrc;
         htmlElement.currentTime = 0;
@@ -109,6 +131,8 @@ function audioInstance(htmlElement) {
     // iOS requires a user gesture to unlock audio elements.
     // Call this from any click/tap handler to ensure play() works later.
     warmUp() {
+      ensureAudioCtx();
+      if (getAudioCtx().state === 'suspended') getAudioCtx().resume();
       if (!isPlaying) {
         htmlElement.src = blobUrl || initialSrc;
         htmlElement.play().then(() => {
@@ -162,9 +186,9 @@ const updateMediaSession = (newState) => {
 
     navigator.mediaSession.playbackState = (isLive || isLoading) ? 'playing' : newState === 'paused' ? 'paused' : 'none';
 
-    if (isLive || newState === 'paused') {
-      navigator.mediaSession.setPositionState();
-    }
+    // Always clear position state — live streams aren't seekable.
+    // Without this, iOS may show skip ±10s controls.
+    try { navigator.mediaSession.setPositionState(); } catch (_) {}
   }
 
   posterImage.querySelector('img').src = cloudinaryImageUrl(displayText, isLive);
@@ -203,6 +227,9 @@ if ('mediaSession' in navigator) {
   navigator.mediaSession.setActionHandler('nexttrack', () => core.nextRadio());
   navigator.mediaSession.setActionHandler('pause', () => core.pauseRadio());
   navigator.mediaSession.setActionHandler('play', () => core.resumeRadio());
+  // Claim seek handlers with no-op so iOS shows prev/next instead of skip ±10s
+  navigator.mediaSession.setActionHandler('seekbackward', () => { /* no-op */ });
+  navigator.mediaSession.setActionHandler('seekforward', () => { /* no-op */ });
 }
 
 // --- Event listeners ---

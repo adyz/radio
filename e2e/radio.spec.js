@@ -160,7 +160,8 @@ test.describe('Radio Player E2E', () => {
     await page.locator('#playButton').click();
 
     // Should eventually show error message (after retry cycle)
-    await expect(page.locator('#errorMsg')).not.toHaveClass(/invisible/, { timeout: 15000 });
+    // Retry cycle: loading(6s) + retry delay(3s) + loading(6s) = ~15s worst case
+    await expect(page.locator('#errorMsg')).not.toHaveClass(/invisible/, { timeout: 25000 });
 
     // In error state, stop button is visible (error/recovering both show stop)
     await expect(page.locator('#stopButton')).toBeVisible();
