@@ -159,13 +159,14 @@ const updateMediaSession = (newState) => {
     // Re-register ALL action handlers on every state transition.
     // iOS resets them when a different <audio> element (loading/error sound)
     // becomes the active "now playing" source.
+    console.log(`[mediaSession] registering handlers — state: ${newState}, core: ${!!core}`);
     if (core) {
-      navigator.mediaSession.setActionHandler('previoustrack', () => core.prevRadio());
-      navigator.mediaSession.setActionHandler('nexttrack', () => core.nextRadio());
-      navigator.mediaSession.setActionHandler('pause', () => core.pauseRadio());
-      navigator.mediaSession.setActionHandler('play', () => core.resumeRadio());
-      navigator.mediaSession.setActionHandler('seekbackward', () => { /* no-op: block iOS skip ±10s */ });
-      navigator.mediaSession.setActionHandler('seekforward', () => { /* no-op: block iOS skip ±10s */ });
+      navigator.mediaSession.setActionHandler('previoustrack', () => { console.log('[mediaSession] previoustrack fired'); core.prevRadio(); });
+      navigator.mediaSession.setActionHandler('nexttrack', () => { console.log('[mediaSession] nexttrack fired'); core.nextRadio(); });
+      navigator.mediaSession.setActionHandler('pause', () => { console.log('[mediaSession] pause fired'); core.pauseRadio(); });
+      navigator.mediaSession.setActionHandler('play', () => { console.log('[mediaSession] play fired'); core.resumeRadio(); });
+      navigator.mediaSession.setActionHandler('seekbackward', () => { console.log('[mediaSession] seekbackward fired'); });
+      navigator.mediaSession.setActionHandler('seekforward', () => { console.log('[mediaSession] seekforward fired'); });
     }
 
     // Keep session alive during loading/error (sounds are playing via <audio>)
