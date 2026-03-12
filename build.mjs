@@ -79,6 +79,65 @@ async function copyAssets() {
     }
 }
 
+async function buildV2() {
+    const v2Src = path.join(srcFolder, "v2");
+    const v2Dist = path.join(distFolder, "v2");
+
+    try {
+        // Check if v2 folder exists
+        if (!await fs.pathExists(v2Src)) {
+            console.log("⏭️  No src/v2 folder — skipping v2 build");
+            return;
+        }
+
+        // Copy everything first
+        await fs.copy(v2Src, v2Dist);
+
+        // Minify v2/index.html (inline CSS like v1)
+        const v2HtmlPath = path.join(v2Dist, "index.html");
+        if (await fs.pathExists(v2HtmlPath)) {
+            let htmlContent = await fs.readFile(v2HtmlPath, "utf8");
+
+            // v2 references ../css/output.css — inline it
+            const cssPath = path.join(srcFolder, "css", "output.css");
+            const cssContent = await fs.readFile(cssPath, "utf8");
+            const cssLinkPattern = /<link[^>]*href="[^"]*output\.css"[^>]*>/;
+            if (cssLinkPattern.test(htmlContent)) {
+                htmlContent = htmlContent.replace(cssLinkPattern, `<style>${cssContent}</style>`);
+            }
+
+            const minifiedHtml = await minify(htmlContent, {
+                collapseWhitespace: true,
+                removeComments: true,
+                removeRedundantAttributes: true,
+                removeScriptTypeAttributes: true,
+                removeStyleLinkTypeAttributes: true,
+                minifyJS: true,
+                minifyCSS: true
+            });
+            await fs.writeFile(v2HtmlPath, minifiedHtml);
+        }
+
+        // Minify v2 JS files
+        const v2JsFolder = path.join(v2Dist, "js");
+        if (await fs.pathExists(v2JsFolder)) {
+            const files = await fs.readdir(v2JsFolder);
+            for (const file of files) {
+                if (file.endsWith(".js")) {
+                    const filePath = path.join(v2JsFolder, file);
+                    // v2 uses ES modules — keep module structure, just compress
+                    await execPromise(`npx terser ${filePath} -o ${filePath} --compress 'drop_console=true' --mangle --module`);
+                    console.log(`✅ Minified v2: ${file}`);
+                }
+            }
+        }
+
+        console.log("✅ Built v2");
+    } catch (error) {
+        console.error("❌ Error building v2:", error);
+    }
+}
+
 async function buildCSS() {
     try {
         await execPromise(`npx tailwindcss -i ./src/css/input.css -o ./src/css/output.css --minify`);
@@ -95,6 +154,7 @@ async function build() {
     await minifyHTML();     // 2. Inline CSS into HTML, then minify
     await minifyJS();
     await copyAssets();
+    await buildV2();        // 3. Copy + minify v2
     console.log("🎉 Build complete!");
 }
 
