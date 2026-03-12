@@ -63,7 +63,10 @@ if (hasRestoredStation) {
   radioSelect.selectedIndex = parseInt(localStorage.getItem('lastRadioIndex'), 10);
 }
 
-// --- Audio instances (lazy blob preload) ---
+// --- Sound effects via <audio> elements ---
+// These play through real <audio> elements to keep the iOS MediaSession alive.
+// MediaSession action handlers are re-registered on every state transition to
+// prevent iOS from resetting them when a different <audio> element takes over.
 
 let blobsPreloaded = false;
 
@@ -71,26 +74,26 @@ function audioInstance(htmlElement) {
   let initialSrc = htmlElement.querySelector('source').src;
   let isPlaying = false;
   let blobUrl = null;
+  let playGeneration = 0;
 
   const preloadBlob = () => {
-    if (blobUrl) return; // already loaded
+    if (blobUrl) return;
     fetch(initialSrc)
       .then(r => r.blob())
-      .then(blob => {
-        blobUrl = URL.createObjectURL(blob);
-      })
-      .catch(err => {
-        console.warn('Audio blob preload failed, using network src:', initialSrc, err);
-      });
+      .then(blob => { blobUrl = URL.createObjectURL(blob); })
+      .catch(err => console.warn('Audio blob preload failed:', initialSrc, err));
   };
 
   return {
     play() {
       if (!isPlaying) {
+        const gen = ++playGeneration;
+        htmlElement.volume = 1;
         htmlElement.src = blobUrl || initialSrc;
         htmlElement.currentTime = 0;
         isPlaying = true;
         htmlElement.play().catch((error) => {
+          if (gen !== playGeneration) return;
           if (error.name !== 'AbortError') console.error('Error playing audio:', error);
           isPlaying = false;
         });
@@ -103,8 +106,6 @@ function audioInstance(htmlElement) {
         isPlaying = false;
       }
     },
-    // iOS requires a user gesture to unlock audio elements.
-    // Call this from any click/tap handler to ensure play() works later.
     warmUp() {
       if (!isPlaying) {
         htmlElement.src = blobUrl || initialSrc;
@@ -121,6 +122,50 @@ function audioInstance(htmlElement) {
 const loadingNoiseInstance = audioInstance(loadingNoise);
 const errorNoiseInstance = audioInstance(errorNoise);
 
+// Shared helper — registers all MediaSession action handlers.
+// Called from both updateMediaSession() (every state transition) and
+// reRegisterMediaSessionHandlers() (after sound-effect playback steals focus).
+function registerMediaSessionHandlers() {
+  navigator.mediaSession.setActionHandler('previoustrack', () => core.prevRadio());
+  navigator.mediaSession.setActionHandler('nexttrack',     () => core.nextRadio());
+  navigator.mediaSession.setActionHandler('pause',         () => core.pauseRadio());
+  navigator.mediaSession.setActionHandler('play',          () => core.resumeRadio());
+  navigator.mediaSession.setActionHandler('seekbackward', null);
+  navigator.mediaSession.setActionHandler('seekforward',  null);
+}
+
+// When loading/error sounds start playing, iOS hands media session to that
+// <audio> element and resets all action handlers.  Re-register them here so
+// the lock-screen shows prev/next instead of skip ±10 s.
+// Also force playbackState='playing' so macOS doesn't briefly show "Not Playing"
+// in the gap between pausing the main player and the sound effect producing audio.
+function reRegisterMediaSessionHandlers() {
+  if (!('mediaSession' in navigator) || !core) return;
+  navigator.mediaSession.playbackState = 'playing';
+  registerMediaSessionHandlers();
+  // iOS picks up the sound effect's duration as "now playing" — clear it.
+  try { navigator.mediaSession.setPositionState(); } catch (_) {}
+}
+loadingNoise.addEventListener('play', reRegisterMediaSessionHandlers);
+loadingNoise.addEventListener('playing', reRegisterMediaSessionHandlers);
+errorNoise.addEventListener('play', reRegisterMediaSessionHandlers);
+errorNoise.addEventListener('playing', reRegisterMediaSessionHandlers);
+
+// When a sound effect pauses (e.g. loadingSound.stop() after stream loaded),
+// macOS briefly shows "Not Playing" because the active audio source just stopped.
+// Re-assert playbackState so the OS doesn't flash "Not Playing" in the gap before
+// it picks up audio from the main player.
+function reassertPlaybackState() {
+  if (!('mediaSession' in navigator) || !core) return;
+  const s = core.getState();
+  if (s === 'playing' || s === 'loading' || s === 'retrying' || s === 'error' || s === 'recovering') {
+    navigator.mediaSession.playbackState = 'playing';
+    try { navigator.mediaSession.setPositionState(); } catch (_) {}
+  }
+}
+loadingNoise.addEventListener('pause', reassertPlaybackState);
+errorNoise.addEventListener('pause', reassertPlaybackState);
+
 // Preload audio blobs on first user interaction (not at page load)
 function preloadAudioBlobs() {
   if (blobsPreloaded) return;
@@ -136,6 +181,9 @@ const showButton = (which) => {
   pauseButton.classList.toggle('hidden', which !== 'pause');
   stopButton.classList.toggle('hidden', which !== 'stop');
 };
+
+// core reference — set after createRadioCore(), used by updateMediaSession
+let core = null;
 
 const updateMediaSession = (newState) => {
   const title = radioSelect.options[radioSelect.selectedIndex].text;
@@ -154,13 +202,20 @@ const updateMediaSession = (newState) => {
       artwork: [{ src: cloudinaryImageUrl(displayText, isLive) }]
     });
 
-    // Action handlers are registered once after core init (see below)
-    // to avoid TDZ — updateMediaSession is called during createRadioCore()
+    // Re-register ALL action handlers on every state transition.
+    // iOS resets them when a different <audio> element (loading/error sound)
+    // becomes the active "now playing" source.
+    if (core) {
+      registerMediaSessionHandlers();
+    }
 
-    navigator.mediaSession.playbackState = (isLive || isLoading) ? 'playing' : newState === 'paused' ? 'paused' : 'none';
+    // Keep session alive during loading/error (sounds are playing via <audio>)
+    navigator.mediaSession.playbackState = (isLive || isLoading || hasError) ? 'playing' : newState === 'paused' ? 'paused' : 'none';
 
-    if (isLive || newState === 'paused') {
-      navigator.mediaSession.setPositionState();
+    // Clear position state for active/paused states — tells the OS there's no
+    // seekable timeline, so it won't show a finite progress bar.
+    if (isLive || isLoading || hasError || newState === 'paused') {
+      try { navigator.mediaSession.setPositionState(); } catch (_) {}
     }
   }
 
@@ -169,9 +224,7 @@ const updateMediaSession = (newState) => {
   loadingMsg.innerText = isLoading ? `${LABELS.loading} ${title}` : '';
 };
 
-// --- Create core (state machine) ---
-
-const core = createRadioCore({
+core = createRadioCore({
   getStationUrl:    (i) => radioSelect.options[i].value,
   getStationCount:  () => radioSelect.options.length,
   getSelectedIndex: () => radioSelect.selectedIndex,
@@ -193,14 +246,6 @@ const core = createRadioCore({
   performanceNow:   () => performance.now(),
   isOnline:          () => navigator.onLine,
 });
-
-// --- Media Session action handlers (registered once, after core exists) ---
-if ('mediaSession' in navigator) {
-  navigator.mediaSession.setActionHandler('previoustrack', () => core.prevRadio());
-  navigator.mediaSession.setActionHandler('nexttrack', () => core.nextRadio());
-  navigator.mediaSession.setActionHandler('pause', () => core.pauseRadio());
-  navigator.mediaSession.setActionHandler('play', () => core.resumeRadio());
-}
 
 // --- Event listeners ---
 
@@ -250,19 +295,27 @@ player.addEventListener('play', () => {
 
 player.addEventListener('pause', () => {
   const s = core.getState();
-  // Don't signal 'paused' during loading/retrying/recovering — OS would hand over media control to another app
-  if ('mediaSession' in navigator && s !== 'loading' && s !== 'retrying' && s !== 'recovering') {
-    navigator.mediaSession.playbackState = 'paused';
+  // During loading/retrying/recovering the main player pauses while the loading
+  // sound takes over.  Actively re-assert 'playing' so macOS doesn't flash
+  // "Not Playing" in the gap.  Only signal 'paused' in normal playback states.
+  if ('mediaSession' in navigator) {
+    if (s === 'loading' || s === 'retrying' || s === 'recovering') {
+      navigator.mediaSession.playbackState = 'playing';
+    } else if (s === 'playing') {
+      navigator.mediaSession.playbackState = 'paused';
+    }
   }
   core.onPlayerPause();
 });
 
 // Stream failure during playback (lost WiFi, server died, etc.)
 player.addEventListener('error', () => core.onPlayerError());
+
 player.addEventListener('stalled', () => {
-  // 'stalled' fires when data stops arriving — give it a few seconds before treating as error
+  const playIdAtStall = core._getPlayId();
   const stalledTimeout = setTimeout(() => {
-    if (core.getState() === 'playing') core.onPlayerError();
+    // Only treat as error if we're still on the same stream
+    if (core._getPlayId() === playIdAtStall && core.getState() === 'playing') core.onPlayerError();
   }, 5000);
   player.addEventListener('playing', () => clearTimeout(stalledTimeout), { once: true });
 });
