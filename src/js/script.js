@@ -71,6 +71,7 @@ function audioInstance(htmlElement) {
   let initialSrc = htmlElement.querySelector('source').src;
   let isPlaying = false;
   let blobUrl = null;
+  let playGeneration = 0;
 
   const preloadBlob = () => {
     if (blobUrl) return; // already loaded
@@ -87,21 +88,23 @@ function audioInstance(htmlElement) {
   return {
     play() {
       if (!isPlaying) {
+        const gen = ++playGeneration;
         htmlElement.src = blobUrl || initialSrc;
         htmlElement.currentTime = 0;
         isPlaying = true;
         htmlElement.play().catch((error) => {
+          if (gen !== playGeneration) return; // stale promise — ignore
           if (error.name !== 'AbortError') console.error('Error playing audio:', error);
           isPlaying = false;
         });
       }
     },
     stop() {
-      if (isPlaying) {
-        htmlElement.pause();
-        htmlElement.src = '';
-        isPlaying = false;
-      }
+      // Always pause & clear — even if isPlaying is false due to race condition
+      htmlElement.pause();
+      htmlElement.src = '';
+      isPlaying = false;
+      playGeneration++; // invalidate any pending play() promise
     },
     // iOS requires a user gesture to unlock audio elements.
     // Call this from any click/tap handler to ensure play() works later.
