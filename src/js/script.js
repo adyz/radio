@@ -100,18 +100,11 @@ function audioInstance(htmlElement) {
       }
     },
     stop() {
-      // Mute immediately (user hears nothing) but keep the element "playing"
-      // for 300ms so macOS doesn't flash "Not Playing" in the gap before it
-      // picks up the main player's audio output.
-      htmlElement.volume = 0;
-      const gen = ++playGeneration;
-      isPlaying = false;
-      setTimeout(() => {
-        if (gen !== playGeneration) return; // a new play() started — don't kill it
+      if (isPlaying) {
         htmlElement.pause();
         htmlElement.src = '';
-        htmlElement.volume = 1;
-      }, 300);
+        isPlaying = false;
+      }
     },
     warmUp() {
       if (!isPlaying) {
