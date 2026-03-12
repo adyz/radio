@@ -288,9 +288,15 @@ player.addEventListener('play', () => {
 
 player.addEventListener('pause', () => {
   const s = core.getState();
-  // Don't signal 'paused' during loading/retrying/recovering — OS would hand over media control to another app
-  if ('mediaSession' in navigator && s !== 'loading' && s !== 'retrying' && s !== 'recovering') {
-    navigator.mediaSession.playbackState = 'paused';
+  // During loading/retrying/recovering the main player pauses while the loading
+  // sound takes over.  Actively re-assert 'playing' so macOS doesn't flash
+  // "Not Playing" in the gap.  Only signal 'paused' in normal playback states.
+  if ('mediaSession' in navigator) {
+    if (s === 'loading' || s === 'retrying' || s === 'recovering') {
+      navigator.mediaSession.playbackState = 'playing';
+    } else if (s === 'playing') {
+      navigator.mediaSession.playbackState = 'paused';
+    }
   }
   core.onPlayerPause();
 });
