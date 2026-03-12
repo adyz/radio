@@ -4,7 +4,7 @@
 
 import { createRadioCore } from './radioCore.js';
 
-document.addEventListener("touchstart", function () { }, true);
+document.addEventListener("touchstart", () => preloadAudioBlobs(), { once: true, capture: true });
 
 // --- DOM refs ---
 
@@ -42,9 +42,9 @@ function cloudinaryImageUrl(text, live = false) {
 const STATUS_IMAGE_TEXTS = Object.values(LABELS);
 if ('caches' in window) {
   caches.open('radio-images').then(cache => {
-    STATUS_IMAGE_TEXTS.forEach(text => {
+    return Promise.all(STATUS_IMAGE_TEXTS.map(text => {
       const url = cloudinaryImageUrl(text);
-      cache.match(url)
+      return cache.match(url)
         .then(hit => {
           if (!hit) {
             return fetch(url, { mode: 'no-cors' }).then(res => {
@@ -53,7 +53,7 @@ if ('caches' in window) {
           }
         })
         .catch(() => { /* offline or CORS — ignore, SW will cache on next online visit */ });
-    });
+    }));
   }).catch(() => { /* cache API unavailable */ });
 }
 
@@ -374,6 +374,8 @@ const new_selector_content = document.getElementById('new_selector__content');
 const new_selector_button_example = document.getElementById('new_selector__button_example');
 
 const radios = radioSelect.querySelectorAll('option');
+const selectorButtons = [];
+const fragment = document.createDocumentFragment();
 radios.forEach((radio, index) => {
   const new_button = new_selector_button_example.cloneNode(true);
   new_button.id = '';
@@ -388,26 +390,23 @@ radios.forEach((radio, index) => {
     new_selector_content.classList.add('hidden');
   });
 
-  new_selector_content.appendChild(new_button);
-
-  if (radioSelect.selectedIndex === index) {
-    new_button.classList.add('bg-Red');
-    const previous_selected = new_selector_content.querySelector('.bg-Red');
-    if (previous_selected) previous_selected.classList.remove('bg-Red');
-  }
+  fragment.appendChild(new_button);
+  selectorButtons.push(new_button);
 });
+new_selector_content.appendChild(fragment);
 
-[new_selector_open_button, posterImage].map(el => el.addEventListener('click', () => {
+// Track the currently highlighted button for O(1) updates
+let highlightedSelectorButton = selectorButtons[radioSelect.selectedIndex] || null;
+if (highlightedSelectorButton) highlightedSelectorButton.classList.add('bg-Red');
+
+[new_selector_open_button, posterImage].forEach(el => el.addEventListener('click', () => {
   new_selector_content.classList.toggle('hidden');
-  const new_selector_buttons = new_selector_content.querySelectorAll('button');
-  new_selector_buttons.forEach((button, index) => {
-    if (radioSelect.selectedIndex === index) {
-      button.classList.add('bg-Red');
-      button.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    } else {
-      button.classList.remove('bg-Red');
-    }
-  });
+  if (highlightedSelectorButton) highlightedSelectorButton.classList.remove('bg-Red');
+  highlightedSelectorButton = selectorButtons[radioSelect.selectedIndex] || null;
+  if (highlightedSelectorButton) {
+    highlightedSelectorButton.classList.add('bg-Red');
+    highlightedSelectorButton.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
 }));
 
 document.addEventListener('click', (e) => {
