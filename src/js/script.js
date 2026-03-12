@@ -141,6 +141,21 @@ loadingNoise.addEventListener('playing', reRegisterMediaSessionHandlers);
 errorNoise.addEventListener('play', reRegisterMediaSessionHandlers);
 errorNoise.addEventListener('playing', reRegisterMediaSessionHandlers);
 
+// When a sound effect pauses (e.g. loadingSound.stop() after stream loaded),
+// macOS briefly shows "Not Playing" because the active audio source just stopped.
+// Re-assert playbackState so the OS doesn't flash "Not Playing" in the gap before
+// it picks up audio from the main player.
+function reassertPlaybackState() {
+  if (!('mediaSession' in navigator) || !core) return;
+  const s = core.getState();
+  if (s === 'playing' || s === 'loading' || s === 'retrying' || s === 'error' || s === 'recovering') {
+    console.log(`[mediaSession] sound effect paused — re-asserting playbackState=playing (state: ${s})`);
+    navigator.mediaSession.playbackState = 'playing';
+  }
+}
+loadingNoise.addEventListener('pause', reassertPlaybackState);
+errorNoise.addEventListener('pause', reassertPlaybackState);
+
 // Preload audio blobs on first user interaction (not at page load)
 function preloadAudioBlobs() {
   if (blobsPreloaded) return;
