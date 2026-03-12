@@ -120,6 +120,22 @@ function audioInstance(htmlElement) {
 const loadingNoiseInstance = audioInstance(loadingNoise);
 const errorNoiseInstance = audioInstance(errorNoise);
 
+// When loading/error sounds start playing, iOS hands media session to that
+// <audio> element and resets all action handlers.  Re-register them here so
+// the lock-screen shows prev/next instead of skip ±10 s.
+function reRegisterMediaSessionHandlers() {
+  if (!('mediaSession' in navigator) || !core) return;
+  console.log('[mediaSession] re-registering handlers after sound effect play');
+  navigator.mediaSession.setActionHandler('previoustrack', () => { console.log(`[mediaSession] previoustrack fired — station: ${radioSelect.options[radioSelect.selectedIndex].text}, state: ${core.getState?.() ?? 'unknown'}`); core.prevRadio(); });
+  navigator.mediaSession.setActionHandler('nexttrack', () => { console.log(`[mediaSession] nexttrack fired — station: ${radioSelect.options[radioSelect.selectedIndex].text}, state: ${core.getState?.() ?? 'unknown'}`); core.nextRadio(); });
+  navigator.mediaSession.setActionHandler('pause', () => { console.log(`[mediaSession] pause fired — station: ${radioSelect.options[radioSelect.selectedIndex].text}, state: ${core.getState?.() ?? 'unknown'}`); core.pauseRadio(); });
+  navigator.mediaSession.setActionHandler('play', () => { console.log(`[mediaSession] play fired — station: ${radioSelect.options[radioSelect.selectedIndex].text}, state: ${core.getState?.() ?? 'unknown'}`); core.resumeRadio(); });
+  navigator.mediaSession.setActionHandler('seekbackward', null);
+  navigator.mediaSession.setActionHandler('seekforward', null);
+}
+loadingNoise.addEventListener('play', reRegisterMediaSessionHandlers);
+errorNoise.addEventListener('play', reRegisterMediaSessionHandlers);
+
 // Preload audio blobs on first user interaction (not at page load)
 function preloadAudioBlobs() {
   if (blobsPreloaded) return;
@@ -165,8 +181,8 @@ const updateMediaSession = (newState) => {
       navigator.mediaSession.setActionHandler('nexttrack', () => { console.log(`[mediaSession] nexttrack fired — station: ${radioSelect.options[radioSelect.selectedIndex].text}, state: ${core.getState?.() ?? 'unknown'}`); core.nextRadio(); });
       navigator.mediaSession.setActionHandler('pause', () => { console.log(`[mediaSession] pause fired — station: ${radioSelect.options[radioSelect.selectedIndex].text}, state: ${core.getState?.() ?? 'unknown'}`); core.pauseRadio(); });
       navigator.mediaSession.setActionHandler('play', () => { console.log(`[mediaSession] play fired — station: ${radioSelect.options[radioSelect.selectedIndex].text}, state: ${core.getState?.() ?? 'unknown'}`); core.resumeRadio(); });
-      navigator.mediaSession.setActionHandler('seekbackward', () => { console.log(`[mediaSession] seekbackward fired — station: ${radioSelect.options[radioSelect.selectedIndex].text}, state: ${core.getState?.() ?? 'unknown'}`); });
-      navigator.mediaSession.setActionHandler('seekforward', () => { console.log(`[mediaSession] seekforward fired — station: ${radioSelect.options[radioSelect.selectedIndex].text}, state: ${core.getState?.() ?? 'unknown'}`); });
+      navigator.mediaSession.setActionHandler('seekbackward', null);
+      navigator.mediaSession.setActionHandler('seekforward', null);
     }
 
     // Keep session alive during loading/error (sounds are playing via <audio>)
