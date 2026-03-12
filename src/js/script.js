@@ -324,6 +324,20 @@ player.addEventListener('pause', () => {
 
 // Stream failure during playback (lost WiFi, server died, etc.)
 player.addEventListener('error', () => core.onPlayerError());
+
+// When the <audio> element reports a new duration (buffer size on live streams),
+// macOS/iOS Now Playing overwrites our setPositionState.  Fight back by
+// re-asserting a huge duration so the OS never shows a finite progress bar.
+player.addEventListener('durationchange', () => {
+  if (!('mediaSession' in navigator) || !core) return;
+  const s = core.getState();
+  if (s === 'playing' || s === 'loading' || s === 'retrying' || s === 'error' || s === 'recovering') {
+    try {
+      navigator.mediaSession.setPositionState({ duration: 1e6, playbackRate: 1, position: 0 });
+    } catch (_) {}
+  }
+});
+
 player.addEventListener('stalled', () => {
   const playIdAtStall = core._getPlayId();
   const stalledTimeout = setTimeout(() => {
