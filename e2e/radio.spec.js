@@ -372,8 +372,17 @@ test.describe('Offline — cached resources', () => {
 
     await page.goto('/');
 
-    // Wait for SW to install and pre-cache sounds + images to be fetched
-    await page.waitForTimeout(3000);
+    // Wait for SW to activate and pre-cache sounds
+    await page.waitForFunction(() =>
+      navigator.serviceWorker.ready.then(reg => reg.active !== null),
+      { timeout: 10000 }
+    );
+    // Give SW time to finish cache.addAll in install event
+    await page.waitForFunction(async () => {
+      const cache = await caches.open('radio-sounds-v1');
+      const keys = await cache.keys();
+      return keys.length >= 2;
+    }, { timeout: 10000 });
 
     // Go offline WITHOUT ever pressing play
     await page.context().setOffline(true);

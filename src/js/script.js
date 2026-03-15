@@ -35,7 +35,8 @@ const LABELS = {
 function cloudinaryImageUrl(text, live = false) {
   const url_non_live = 'nndti4oybhdzggf8epvh';
   const url_live = 'rhz6yy4btbqicjqhsy7a';
-  return `https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:${text}/${live ? url_live : url_non_live}`;
+  const encoded = encodeURIComponent(text);
+  return `https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:${encoded}/${live ? url_live : url_non_live}`;
 }
 
 // Pre-cache status images + station name images into Cache API for offline use
@@ -178,9 +179,12 @@ errorNoise.addEventListener('playing', reRegisterMediaSessionHandlers);
 // initial setPositionState() clear, causing a countdown timer to appear.
 // Repeatedly clear it on every timeupdate tick so the OS never shows the
 // sound effect's finite duration.
+// Feature-detect once to avoid repeated exceptions on unsupported browsers.
+let canClearPositionState = true;
+try { navigator.mediaSession.setPositionState(); } catch (_) { canClearPositionState = false; }
 function clearSfxPositionState() {
-  if ('mediaSession' in navigator) {
-    try { navigator.mediaSession.setPositionState(); } catch (_) {}
+  if (canClearPositionState) {
+    try { navigator.mediaSession.setPositionState(); } catch (_) { canClearPositionState = false; }
   }
 }
 loadingNoise.addEventListener('timeupdate', clearSfxPositionState);
