@@ -75,13 +75,17 @@ function audioInstance(htmlElement) {
   let isPlaying = false;
   let blobUrl = null;
   let playGeneration = 0;
+  let preloadPromise = null;
 
   const preloadBlob = () => {
-    if (blobUrl) return;
-    fetch(initialSrc)
+    if (blobUrl || preloadPromise) return;
+    preloadPromise = fetch(initialSrc)
       .then(r => r.blob())
       .then(blob => { blobUrl = URL.createObjectURL(blob); })
-      .catch(err => console.warn('Audio blob preload failed:', initialSrc, err));
+      .catch(err => {
+        preloadPromise = null;
+        console.warn('Audio blob preload failed:', initialSrc, err);
+      });
   };
 
   return {

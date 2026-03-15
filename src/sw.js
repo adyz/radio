@@ -2,7 +2,7 @@
 // Audio sounds are handled via blob URLs in script.js
 // SW is registered for PWA install support and future use
 
-const CACHE_NAME = 'radio-images';
+const CACHE_NAME = 'radio-images-v2';
 const MAX_CACHED_IMAGES = 30;
 
 self.addEventListener('install', () => {
