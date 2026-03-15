@@ -365,4 +365,44 @@ test.describe('Offline — cached resources', () => {
     expect(paused).toBe(false);
     expect(src).toMatch(/^blob:/);
   });
+
+  test('sounds and error image work offline without prior play (SW pre-cache)', async ({ page }) => {
+    await page.route(/res\.cloudinary\.com/, (route) =>
+      route.fulfill({ status: 200, contentType: 'image/png', body: PIXEL_PNG }));
+
+    await page.goto('/');
+
+    // Wait for SW to install and pre-cache sounds + images to be fetched
+    await page.waitForTimeout(3000);
+
+    // Go offline WITHOUT ever pressing play
+    await page.context().setOffline(true);
+
+    // Click next — should trigger error state with sound + image from cache
+    await page.locator('#nextButton').click();
+    await expect(page.locator('#errorMsg')).not.toHaveClass(/invisible/, { timeout: 3000 });
+
+    // Error image should render offline
+    await page.waitForFunction(() => {
+      const img = document.querySelector('#posterImage img');
+      return img.complete && img.naturalWidth > 0;
+    }, { timeout: 5000 });
+
+    // Error sound should play (from SW cache or blob)
+    await page.waitForTimeout(500);
+    const errorPlaying = await page.evaluate(() => {
+      const el = document.getElementById('errorNoise');
+      return !el.paused;
+    });
+    expect(errorPlaying).toBe(true);
+
+    // Stop — should show idle image offline
+    await page.locator('#stopButton').click();
+    await expect(page.locator('#playButton')).toBeVisible();
+
+    await page.waitForFunction(() => {
+      const img = document.querySelector('#posterImage img');
+      return img.complete && img.naturalWidth > 0;
+    }, { timeout: 5000 });
+  });
 });
