@@ -168,7 +168,7 @@ function reRegisterMediaSessionHandlers() {
   navigator.mediaSession.playbackState = 'playing';
   registerMediaSessionHandlers();
   // iOS picks up the sound effect's duration as "now playing" — clear it.
-  try { navigator.mediaSession.setPositionState(); } catch (_) {}
+  try { navigator.mediaSession.setPositionState({}); } catch (_) {}
 }
 loadingNoise.addEventListener('play', reRegisterMediaSessionHandlers);
 loadingNoise.addEventListener('playing', reRegisterMediaSessionHandlers);
@@ -199,7 +199,7 @@ function reassertPlaybackState() {
   const s = core.getState();
   if (s === 'playing' || s === 'loading' || s === 'retrying' || s === 'error' || s === 'recovering') {
     navigator.mediaSession.playbackState = 'playing';
-    try { navigator.mediaSession.setPositionState(); } catch (_) {}
+    try { navigator.mediaSession.setPositionState({}); } catch (_) {}
   }
 }
 loadingNoise.addEventListener('pause', reassertPlaybackState);
@@ -254,7 +254,7 @@ const updateMediaSession = (newState) => {
     // Clear position state for active/paused states — tells the OS there's no
     // seekable timeline, so it won't show a finite progress bar.
     if (isLive || isLoading || hasError || newState === 'paused') {
-      try { navigator.mediaSession.setPositionState(); } catch (_) {}
+      try { navigator.mediaSession.setPositionState({}); } catch (_) {}
     }
   }
 
