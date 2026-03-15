@@ -142,7 +142,16 @@ if (hasRestoredStation) {
 function registerMediaSessionHandlers() {
   navigator.mediaSession.setActionHandler('previoustrack', () => core.prevRadio());
   navigator.mediaSession.setActionHandler('nexttrack',     () => core.nextRadio());
-  navigator.mediaSession.setActionHandler('pause',         () => core.pauseRadio());
+  navigator.mediaSession.setActionHandler('pause', () => {
+    const s = core.getState();
+    // During loading/error the sound effects are playing, not the stream.
+    // "Pause" should cancel everything (same as the on-screen stop button).
+    if (s === 'loading' || s === 'retrying' || s === 'error' || s === 'recovering') {
+      core.stopRadio();
+    } else {
+      core.pauseRadio();
+    }
+  });
   navigator.mediaSession.setActionHandler('play',          () => core.resumeRadio());
   navigator.mediaSession.setActionHandler('seekbackward', null);
   navigator.mediaSession.setActionHandler('seekforward',  null);
@@ -164,6 +173,18 @@ loadingNoise.addEventListener('play', reRegisterMediaSessionHandlers);
 loadingNoise.addEventListener('playing', reRegisterMediaSessionHandlers);
 errorNoise.addEventListener('play', reRegisterMediaSessionHandlers);
 errorNoise.addEventListener('playing', reRegisterMediaSessionHandlers);
+
+// Mobile browsers re-read duration from the active <audio> element after our
+// initial setPositionState() clear, causing a countdown timer to appear.
+// Repeatedly clear it on every timeupdate tick so the OS never shows the
+// sound effect's finite duration.
+function clearSfxPositionState() {
+  if ('mediaSession' in navigator) {
+    try { navigator.mediaSession.setPositionState(); } catch (_) {}
+  }
+}
+loadingNoise.addEventListener('timeupdate', clearSfxPositionState);
+errorNoise.addEventListener('timeupdate', clearSfxPositionState);
 
 // When a sound effect pauses (e.g. loadingSound.stop() after stream loaded),
 // macOS briefly shows "Not Playing" because the active audio source just stopped.
