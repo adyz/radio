@@ -13,7 +13,12 @@ const PRECACHE_SOUNDS = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(SOUND_CACHE_NAME).then(cache => cache.addAll(PRECACHE_SOUNDS))
+    (async () => {
+      const cache = await caches.open(SOUND_CACHE_NAME);
+      for (const url of PRECACHE_SOUNDS) {
+        try { await cache.add(url); } catch (_) { /* individual failure won't block install */ }
+      }
+    })()
   );
   self.skipWaiting();
 });
@@ -46,10 +51,18 @@ async function trimCache() {
 self.addEventListener('fetch', (event) => {
   const url = event.request.url;
 
-  // Sound files — cache-first (pre-cached at install)
-  if (url.endsWith('.mp3') && event.request.method === 'GET') {
+  // Sound files — cache-first (pre-cached at install, same-origin /sounds/ only)
+  const reqUrl = new URL(url, self.location.origin);
+  if (
+    event.request.method === 'GET' &&
+    reqUrl.origin === self.location.origin &&
+    reqUrl.pathname.startsWith('/sounds/') &&
+    reqUrl.pathname.endsWith('.mp3')
+  ) {
     event.respondWith(
-      caches.match(event.request).then(cached => cached || fetch(event.request))
+      caches.open(SOUND_CACHE_NAME).then(cache =>
+        cache.match(event.request).then(cached => cached || fetch(event.request))
+      )
     );
     return;
   }

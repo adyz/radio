@@ -655,7 +655,7 @@ describe('restart after long pause', () => {
 
 describe('max recovery attempts', () => {
   it('stops scheduling recovery after MAX_RECOVERY_ATTEMPTS', async () => {
-    const { deps, calls } = makeDeps();
+    const { deps } = makeDeps();
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
     const core = createRadioCore(deps);
 
@@ -681,7 +681,7 @@ describe('max recovery attempts', () => {
   });
 
   it('resets recovery count on successful playRadio', async () => {
-    const { deps, calls } = makeDeps();
+    const { deps } = makeDeps();
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
     const core = createRadioCore(deps);
 
@@ -702,7 +702,7 @@ describe('max recovery attempts', () => {
   });
 
   it('resets recovery count on stopRadio', async () => {
-    const { deps, calls } = makeDeps();
+    const { deps } = makeDeps();
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
     const core = createRadioCore(deps);
 
