@@ -29,7 +29,12 @@ const PRECACHE_SOUNDS = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     Promise.all([
-      caches.open(APP_CACHE_NAME).then(cache => cache.addAll(APP_SHELL)),
+      (async () => {
+        const cache = await caches.open(APP_CACHE_NAME);
+        for (const url of APP_SHELL) {
+          try { await cache.add(url); } catch (_) { /* individual failure won't block install */ }
+        }
+      })(),
       (async () => {
         const cache = await caches.open(SOUND_CACHE_NAME);
         for (const url of PRECACHE_SOUNDS) {

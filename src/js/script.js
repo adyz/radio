@@ -84,7 +84,7 @@ function audioInstance(htmlElement) {
   const preloadBlob = () => {
     if (blobUrl || preloadPromise) return;
     preloadPromise = fetch(initialSrc)
-      .then(r => r.blob())
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
       .then(blob => { blobUrl = URL.createObjectURL(blob); })
       .catch(err => {
         preloadPromise = null;
