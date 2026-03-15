@@ -41,7 +41,7 @@ function cloudinaryImageUrl(text, live = false) {
 // Pre-cache status images into Cache API so they're reliably available offline
 const STATUS_IMAGE_TEXTS = Object.values(LABELS);
 if ('caches' in window) {
-  caches.open('radio-images').then(cache => {
+  caches.open('radio-images-v2').then(cache => {
     STATUS_IMAGE_TEXTS.forEach(text => {
       const url = cloudinaryImageUrl(text);
       cache.match(url)
