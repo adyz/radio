@@ -3,6 +3,7 @@
 // SW is registered for PWA install support and future use
 
 const CACHE_NAME = 'radio-images-v2';
+// Bump version when sound files change — activate handler cleans old versions.
 const SOUND_CACHE_NAME = 'radio-sounds-v1';
 const MAX_CACHED_IMAGES = 30;
 
@@ -60,9 +61,18 @@ self.addEventListener('fetch', (event) => {
     reqUrl.pathname.endsWith('.mp3')
   ) {
     event.respondWith(
-      caches.open(SOUND_CACHE_NAME).then(cache =>
-        cache.match(event.request).then(cached => cached || fetch(event.request))
-      )
+      (async () => {
+        const cache = await caches.open(SOUND_CACHE_NAME);
+        const cached = await cache.match(event.request);
+        if (cached) return cached;
+        try {
+          const response = await fetch(event.request);
+          if (response.ok) cache.put(event.request, response.clone());
+          return response;
+        } catch (_) {
+          return new Response('', { status: 503, statusText: 'Offline' });
+        }
+      })()
     );
     return;
   }
