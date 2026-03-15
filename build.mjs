@@ -2,6 +2,7 @@ import fs from "fs-extra";
 import path from "path";
 import { fileURLToPath } from "url";
 import { minify } from "html-minifier-terser";
+import { minify as terserMinify } from "terser";
 import { exec } from "child_process";
 import { promisify } from "util";
 
@@ -57,7 +58,16 @@ async function minifyJS() {
             if (file.endsWith(".js")) {
                 const inputFile = path.join(jsSrcFolder, file);
                 const outputFile = path.join(jsDistFolder, file);
-                await execPromise(`npx terser ${inputFile} -o ${outputFile} --compress 'drop_console=true' --mangle --toplevel --output ${outputFile}`);
+                const code = await fs.readFile(inputFile, 'utf8');
+                const result = await terserMinify(code, {
+                    compress: { pure_funcs: ['console.log', 'console.info', 'console.debug'] },
+                    mangle: true,
+                    toplevel: true,
+                });
+                if (!result || !result.code) {
+                    throw new Error(`Terser returned empty output for ${file}`);
+                }
+                await fs.writeFile(outputFile, result.code);
                 console.log(`✅ Minified & Obfuscated (Strong): ${file}`);
             }
         }

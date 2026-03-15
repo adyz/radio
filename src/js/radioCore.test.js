@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createRadioCore, MAX_RETRIES } from './radioCore.js';
+import { createRadioCore, MAX_RECOVERY_ATTEMPTS, RECOVERY_DELAY_MS } from './radioCore.js';
 
 // --- Helpers ---
 
@@ -646,5 +646,186 @@ describe('restart after long pause', () => {
     core.onPlayerPlay();
 
     expect(core.getState()).toBe('playing'); // normal resume
+  });
+});
+
+// =============================================
+// MAX RECOVERY ATTEMPTS
+// =============================================
+
+describe('max recovery attempts', () => {
+  it('stops scheduling recovery after MAX_RECOVERY_ATTEMPTS', async () => {
+    const { deps } = makeDeps();
+    deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
+    const core = createRadioCore(deps);
+
+    // Get to error state
+    core.playRadio(0);
+    await flushPromises();
+    fireTimer(deps, 3000); // retry
+    await flushPromises(); // → error
+    expect(core.getState()).toBe('error');
+
+    // Exhaust all recovery attempts
+    for (let i = 0; i < MAX_RECOVERY_ATTEMPTS; i++) {
+      fireTimer(deps, RECOVERY_DELAY_MS); // scheduleRecovery fires retryFromError
+      await flushPromises(); // recovery .catch → error + scheduleRecovery
+    }
+
+    expect(core.getState()).toBe('error');
+    expect(core._getRecoveryCount()).toBe(MAX_RECOVERY_ATTEMPTS);
+
+    // No more timers should be pending for recovery
+    const hasRecoveryTimer = [...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS);
+    expect(hasRecoveryTimer).toBe(false);
+  });
+
+  it('resets recovery count on successful playRadio', async () => {
+    const { deps } = makeDeps();
+    deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
+    const core = createRadioCore(deps);
+
+    // Get to error with some recovery attempts
+    core.playRadio(0);
+    await flushPromises();
+    fireTimer(deps, 3000);
+    await flushPromises();
+    fireTimer(deps, RECOVERY_DELAY_MS);
+    await flushPromises();
+    expect(core._getRecoveryCount()).toBeGreaterThan(0);
+
+    // Now play succeeds — should reset recovery count
+    deps._setPlayerPlayResult(Promise.resolve());
+    core.playRadio(0);
+    await flushPromises();
+    expect(core._getRecoveryCount()).toBe(0);
+  });
+
+  it('resets recovery count on stopRadio', async () => {
+    const { deps } = makeDeps();
+    deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    fireTimer(deps, 3000);
+    await flushPromises();
+    fireTimer(deps, RECOVERY_DELAY_MS);
+    await flushPromises();
+    expect(core._getRecoveryCount()).toBeGreaterThan(0);
+
+    core.stopRadio();
+    expect(core._getRecoveryCount()).toBe(0);
+  });
+
+  it('resets recovery count when silent recovery succeeds', async () => {
+    const { deps } = makeDeps();
+    deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
+    const core = createRadioCore(deps);
+
+    // Get to error state
+    core.playRadio(0);
+    await flushPromises();
+    fireTimer(deps, 3000);
+    await flushPromises();
+    expect(core.getState()).toBe('error');
+
+    // Do a few failed recoveries
+    fireTimer(deps, RECOVERY_DELAY_MS);
+    await flushPromises();
+    fireTimer(deps, RECOVERY_DELAY_MS);
+    await flushPromises();
+    // count=3: initial scheduleRecovery(1) + two failed retryFromError re-schedules(2,3)
+    expect(core._getRecoveryCount()).toBe(3);
+
+    // Now make recovery succeed
+    deps._setPlayerPlayResult(Promise.resolve());
+    fireTimer(deps, RECOVERY_DELAY_MS);
+    await flushPromises();
+
+    expect(core.getState()).toBe('playing');
+    expect(core._getRecoveryCount()).toBe(0);
+  });
+
+  it('offline recovery reschedules without attempting stream', async () => {
+    let online = true;
+    const { deps, calls } = makeDeps({ isOnline: () => online });
+    deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
+    const core = createRadioCore(deps);
+
+    // Get to error state
+    core.playRadio(0);
+    await flushPromises();
+    fireTimer(deps, 3000);
+    await flushPromises();
+    expect(core.getState()).toBe('error');
+
+    // Go offline
+    online = false;
+    const playsBefore = calls.playerPlay.length;
+
+    // Fire recovery while offline — should reschedule, not attempt stream
+    fireTimer(deps, RECOVERY_DELAY_MS);
+    await flushPromises();
+
+    expect(core.getState()).toBe('error');
+    // No playerPlay attempted while offline
+    expect(calls.playerPlay.length).toBe(playsBefore);
+    // A new recovery timer was scheduled
+    const hasRecoveryTimer = [...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS);
+    expect(hasRecoveryTimer).toBe(true);
+  });
+
+  it('onPlayButtonClick from recovering resets recovery count', async () => {
+    const { deps } = makeDeps();
+    deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
+    const core = createRadioCore(deps);
+
+    // Get to error → recovering
+    core.playRadio(0);
+    await flushPromises();
+    fireTimer(deps, 3000);
+    await flushPromises();
+    expect(core.getState()).toBe('error');
+
+    fireTimer(deps, RECOVERY_DELAY_MS);
+    await flushPromises();
+    expect(core._getRecoveryCount()).toBeGreaterThan(0);
+
+    // User presses play manually — should reset and start fresh
+    deps._setPlayerPlayResult(Promise.resolve());
+    core.onPlayButtonClick();
+    await flushPromises();
+
+    expect(core.getState()).toBe('playing');
+    expect(core._getRecoveryCount()).toBe(0);
+  });
+
+  it('offline recovery loops are also bounded by MAX_RECOVERY_ATTEMPTS', async () => {
+    let online = true;
+    const { deps } = makeDeps({ isOnline: () => online });
+    deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
+    const core = createRadioCore(deps);
+
+    // Get to error state (online)
+    core.playRadio(0);
+    await flushPromises();
+    fireTimer(deps, 3000);
+    await flushPromises();
+    expect(core.getState()).toBe('error');
+
+    // Go offline and exhaust all recovery attempts
+    online = false;
+    for (let i = 0; i < MAX_RECOVERY_ATTEMPTS; i++) {
+      fireTimer(deps, RECOVERY_DELAY_MS);
+      await flushPromises();
+    }
+
+    expect(core.getState()).toBe('error');
+    expect(core._getRecoveryCount()).toBe(MAX_RECOVERY_ATTEMPTS);
+
+    // No more recovery timers — loop is capped even while offline
+    const hasRecoveryTimer = [...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS);
+    expect(hasRecoveryTimer).toBe(false);
   });
 });

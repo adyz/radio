@@ -35,13 +35,17 @@ const LABELS = {
 function cloudinaryImageUrl(text, live = false) {
   const url_non_live = 'nndti4oybhdzggf8epvh';
   const url_live = 'rhz6yy4btbqicjqhsy7a';
-  return `https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:${text}/${live ? url_live : url_non_live}`;
+  const encoded = encodeURIComponent(text);
+  return `https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:${encoded}/${live ? url_live : url_non_live}`;
 }
 
-// Pre-cache status images into Cache API so they're reliably available offline
-const STATUS_IMAGE_TEXTS = Object.values(LABELS);
+// Pre-cache status images + station name images into Cache API for offline use
+const STATUS_IMAGE_TEXTS = [
+  ...Object.values(LABELS),
+  ...Array.from(radioSelect.options).map(o => o.text),
+];
 if ('caches' in window) {
-  caches.open('radio-images').then(cache => {
+  caches.open('radio-images-v2').then(cache => {
     STATUS_IMAGE_TEXTS.forEach(text => {
       const url = cloudinaryImageUrl(text);
       cache.match(url)
@@ -75,13 +79,17 @@ function audioInstance(htmlElement) {
   let isPlaying = false;
   let blobUrl = null;
   let playGeneration = 0;
+  let preloadPromise = null;
 
   const preloadBlob = () => {
-    if (blobUrl) return;
-    fetch(initialSrc)
-      .then(r => r.blob())
+    if (blobUrl || preloadPromise) return;
+    preloadPromise = fetch(initialSrc)
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
       .then(blob => { blobUrl = URL.createObjectURL(blob); })
-      .catch(err => console.warn('Audio blob preload failed:', initialSrc, err));
+      .catch(err => {
+        preloadPromise = null;
+        console.warn('Audio blob preload failed:', initialSrc, err);
+      });
   };
 
   return {
@@ -122,13 +130,29 @@ function audioInstance(htmlElement) {
 const loadingNoiseInstance = audioInstance(loadingNoise);
 const errorNoiseInstance = audioInstance(errorNoise);
 
+// Eagerly preload sound blobs for returning users so they're available offline.
+// fetch() doesn't need a user gesture — only playback does.
+if (hasRestoredStation) {
+  loadingNoiseInstance.preloadBlob();
+  errorNoiseInstance.preloadBlob();
+}
+
 // Shared helper — registers all MediaSession action handlers.
 // Called from both updateMediaSession() (every state transition) and
 // reRegisterMediaSessionHandlers() (after sound-effect playback steals focus).
 function registerMediaSessionHandlers() {
   navigator.mediaSession.setActionHandler('previoustrack', () => core.prevRadio());
   navigator.mediaSession.setActionHandler('nexttrack',     () => core.nextRadio());
-  navigator.mediaSession.setActionHandler('pause',         () => core.pauseRadio());
+  navigator.mediaSession.setActionHandler('pause', () => {
+    const s = core.getState();
+    // During loading/error the sound effects are playing, not the stream.
+    // "Pause" should cancel everything (same as the on-screen stop button).
+    if (s === 'loading' || s === 'retrying' || s === 'error' || s === 'recovering') {
+      core.stopRadio();
+    } else {
+      core.pauseRadio();
+    }
+  });
   navigator.mediaSession.setActionHandler('play',          () => core.resumeRadio());
   navigator.mediaSession.setActionHandler('seekbackward', null);
   navigator.mediaSession.setActionHandler('seekforward',  null);
@@ -144,12 +168,27 @@ function reRegisterMediaSessionHandlers() {
   navigator.mediaSession.playbackState = 'playing';
   registerMediaSessionHandlers();
   // iOS picks up the sound effect's duration as "now playing" — clear it.
-  try { navigator.mediaSession.setPositionState(); } catch (_) {}
+  try { navigator.mediaSession.setPositionState({}); } catch (_) {}
 }
 loadingNoise.addEventListener('play', reRegisterMediaSessionHandlers);
 loadingNoise.addEventListener('playing', reRegisterMediaSessionHandlers);
 errorNoise.addEventListener('play', reRegisterMediaSessionHandlers);
 errorNoise.addEventListener('playing', reRegisterMediaSessionHandlers);
+
+// Mobile browsers re-read duration from the active <audio> element after our
+// initial setPositionState() clear, causing a countdown timer to appear.
+// Repeatedly clear it on every timeupdate tick so the OS never shows the
+// sound effect's finite duration.
+// Feature-detect once to avoid repeated exceptions on unsupported browsers.
+let canClearPositionState = true;
+try { navigator.mediaSession.setPositionState({}); } catch (_) { canClearPositionState = false; }
+function clearSfxPositionState() {
+  if (canClearPositionState) {
+    try { navigator.mediaSession.setPositionState({}); } catch (_) { canClearPositionState = false; }
+  }
+}
+loadingNoise.addEventListener('timeupdate', clearSfxPositionState);
+errorNoise.addEventListener('timeupdate', clearSfxPositionState);
 
 // When a sound effect pauses (e.g. loadingSound.stop() after stream loaded),
 // macOS briefly shows "Not Playing" because the active audio source just stopped.
@@ -160,7 +199,7 @@ function reassertPlaybackState() {
   const s = core.getState();
   if (s === 'playing' || s === 'loading' || s === 'retrying' || s === 'error' || s === 'recovering') {
     navigator.mediaSession.playbackState = 'playing';
-    try { navigator.mediaSession.setPositionState(); } catch (_) {}
+    try { navigator.mediaSession.setPositionState({}); } catch (_) {}
   }
 }
 loadingNoise.addEventListener('pause', reassertPlaybackState);
@@ -215,7 +254,7 @@ const updateMediaSession = (newState) => {
     // Clear position state for active/paused states — tells the OS there's no
     // seekable timeline, so it won't show a finite progress bar.
     if (isLive || isLoading || hasError || newState === 'paused') {
-      try { navigator.mediaSession.setPositionState(); } catch (_) {}
+      try { navigator.mediaSession.setPositionState({}); } catch (_) {}
     }
   }
 
@@ -324,8 +363,18 @@ player.addEventListener('stalled', () => {
 window.addEventListener('online', () => core.retryFromError());
 
 // Prev / Next
-prevButton.addEventListener('click', () => core.prevRadio());
-nextButton.addEventListener('click', () => core.nextRadio());
+prevButton.addEventListener('click', () => {
+  preloadAudioBlobs();
+  loadingNoiseInstance.warmUp();
+  errorNoiseInstance.warmUp();
+  core.prevRadio();
+});
+nextButton.addEventListener('click', () => {
+  preloadAudioBlobs();
+  loadingNoiseInstance.warmUp();
+  errorNoiseInstance.warmUp();
+  core.nextRadio();
+});
 
 // Keep alive worker
 const worker = new Worker("./js/keepAlive.js");

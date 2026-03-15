@@ -10,6 +10,7 @@ import { createStateMachine } from './stateMachine.js';
 export const MAX_RETRIES = 1;
 export const LOADING_TIMEOUT_MS = 6000;
 export const RECOVERY_DELAY_MS = 10000;
+export const MAX_RECOVERY_ATTEMPTS = 30;
 
 const STATE_FX = {
   idle:       { button: 'play',  loading: 'stop',  error: 'stop',  loadingMsg: false, errorMsg: false },
@@ -47,6 +48,7 @@ export function createRadioCore(deps) {
 
   const timers = { retry: null, loading: null, recovery: null };
   let retryCount = 0;
+  let recoveryCount = 0;
   let currentPlayId = 0;
   let lastPauseTime = null;
 
@@ -71,6 +73,7 @@ export function createRadioCore(deps) {
     _clearTimeout(timers.recovery);
     currentPlayId++;
     retryCount = 0;
+    recoveryCount = 0;
     lastPauseTime = null;
     setState('idle');
     playerPause();
@@ -83,7 +86,10 @@ export function createRadioCore(deps) {
     _clearTimeout(timers.retry);
     _clearTimeout(timers.loading);
     _clearTimeout(timers.recovery);
-    if (!_isRetry) retryCount = 0;
+    if (!_isRetry) {
+      retryCount = 0;
+      recoveryCount = 0;
+    }
 
     // No point trying if offline — go straight to error and auto-recover later
     if (!isOnline()) {
@@ -212,6 +218,8 @@ export function createRadioCore(deps) {
 
   // Schedule a silent recovery attempt after RECOVERY_DELAY_MS
   function scheduleRecovery() {
+    if (recoveryCount >= MAX_RECOVERY_ATTEMPTS) return;
+    recoveryCount++;
     _clearTimeout(timers.recovery);
     timers.recovery = _setTimeout(() => {
       retryFromError();
@@ -255,6 +263,7 @@ export function createRadioCore(deps) {
       if (playId !== currentPlayId) return;
       _clearTimeout(timers.loading);
       retryCount = 0;
+      recoveryCount = 0;
       saveLastIndex(index);
       setState('playing');
     }).catch((error) => {
@@ -292,6 +301,7 @@ export function createRadioCore(deps) {
     onPlayButtonClick,
     _getPlayId: () => currentPlayId,
     _getRetryCount: () => retryCount,
+    _getRecoveryCount: () => recoveryCount,
     _getTimers: () => timers,
   };
 }
