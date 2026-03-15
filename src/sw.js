@@ -1,11 +1,25 @@
-// Service Worker — kept minimal
-// Audio sounds are handled via blob URLs in script.js
-// SW is registered for PWA install support and future use
+// Service Worker — app shell + offline support
+// Bump APP_CACHE version when static files change to force re-cache.
+// Bump SOUND_CACHE version when sound files change.
 
+const APP_CACHE_NAME = 'radio-app-v1';
 const CACHE_NAME = 'radio-images-v2';
-// Bump version when sound files change — activate handler cleans old versions.
 const SOUND_CACHE_NAME = 'radio-sounds-v1';
 const MAX_CACHED_IMAGES = 30;
+
+// App shell — everything needed to render the page offline
+const APP_SHELL = [
+  './',
+  './index.html',
+  './css/output.css',
+  './js/script.js',
+  './js/radioCore.js',
+  './js/stateMachine.js',
+  './js/keepAlive.js',
+  './manifest.json',
+  './images/favicon.png',
+  './images/logo.png',
+];
 
 const PRECACHE_SOUNDS = [
   './sounds/loading-low.mp3',
@@ -14,12 +28,15 @@ const PRECACHE_SOUNDS = [
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    (async () => {
-      const cache = await caches.open(SOUND_CACHE_NAME);
-      for (const url of PRECACHE_SOUNDS) {
-        try { await cache.add(url); } catch (_) { /* individual failure won't block install */ }
-      }
-    })()
+    Promise.all([
+      caches.open(APP_CACHE_NAME).then(cache => cache.addAll(APP_SHELL)),
+      (async () => {
+        const cache = await caches.open(SOUND_CACHE_NAME);
+        for (const url of PRECACHE_SOUNDS) {
+          try { await cache.add(url); } catch (_) { /* individual failure won't block install */ }
+        }
+      })(),
+    ])
   );
   self.skipWaiting();
 });
@@ -31,7 +48,7 @@ self.addEventListener('activate', (event) => {
       const keys = await caches.keys();
       await Promise.all(
         keys
-          .filter(k => k.startsWith('radio-') && k !== CACHE_NAME && k !== SOUND_CACHE_NAME)
+          .filter(k => k.startsWith('radio-') && k !== APP_CACHE_NAME && k !== CACHE_NAME && k !== SOUND_CACHE_NAME)
           .map(k => caches.delete(k))
       );
       await self.clients.claim();
@@ -48,7 +65,7 @@ async function trimCache() {
   }
 }
 
-// Serve cached Cloudinary images and sound files when offline (network-first)
+// Serve cached Cloudinary images, sound files, and app shell when offline
 self.addEventListener('fetch', (event) => {
   const url = event.request.url;
 
@@ -71,6 +88,30 @@ self.addEventListener('fetch', (event) => {
           return response;
         } catch (_) {
           return new Response('', { status: 503, statusText: 'Offline' });
+        }
+      })()
+    );
+    return;
+  }
+
+  // App shell — network-first, fallback to cache for offline
+  if (
+    event.request.method === 'GET' &&
+    reqUrl.origin === self.location.origin &&
+    !reqUrl.pathname.startsWith('/sounds/')
+  ) {
+    event.respondWith(
+      (async () => {
+        try {
+          const response = await fetch(event.request);
+          if (response.ok) {
+            const cache = await caches.open(APP_CACHE_NAME);
+            cache.put(event.request, response.clone());
+          }
+          return response;
+        } catch (_) {
+          const cached = await caches.match(event.request);
+          return cached || new Response('Offline', { status: 503, headers: { 'Content-Type': 'text/plain' } });
         }
       })()
     );
