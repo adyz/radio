@@ -3,9 +3,18 @@
 // SW is registered for PWA install support and future use
 
 const CACHE_NAME = 'radio-images-v2';
+const SOUND_CACHE_NAME = 'radio-sounds-v1';
 const MAX_CACHED_IMAGES = 30;
 
-self.addEventListener('install', () => {
+const PRECACHE_SOUNDS = [
+  './sounds/loading-low.mp3',
+  './sounds/error-low.mp3',
+];
+
+self.addEventListener('install', (event) => {
+  event.waitUntil(
+    caches.open(SOUND_CACHE_NAME).then(cache => cache.addAll(PRECACHE_SOUNDS))
+  );
   self.skipWaiting();
 });
 
@@ -16,7 +25,7 @@ self.addEventListener('activate', (event) => {
       const keys = await caches.keys();
       await Promise.all(
         keys
-          .filter(k => k.startsWith('radio-') && k !== CACHE_NAME)
+          .filter(k => k.startsWith('radio-') && k !== CACHE_NAME && k !== SOUND_CACHE_NAME)
           .map(k => caches.delete(k))
       );
       await self.clients.claim();
@@ -33,9 +42,18 @@ async function trimCache() {
   }
 }
 
-// Serve cached Cloudinary images when offline (network-first)
+// Serve cached Cloudinary images and sound files when offline (network-first)
 self.addEventListener('fetch', (event) => {
   const url = event.request.url;
+
+  // Sound files — cache-first (pre-cached at install)
+  if (url.endsWith('.mp3') && event.request.method === 'GET') {
+    event.respondWith(
+      caches.match(event.request).then(cached => cached || fetch(event.request))
+    );
+    return;
+  }
+
   if (!url.includes('res.cloudinary.com') || event.request.method !== 'GET') return;
 
   event.respondWith(
