@@ -219,6 +219,7 @@ export function createRadioCore(deps) {
   // Schedule a silent recovery attempt after RECOVERY_DELAY_MS
   function scheduleRecovery() {
     if (recoveryCount >= MAX_RECOVERY_ATTEMPTS) return;
+    recoveryCount++;
     _clearTimeout(timers.recovery);
     timers.recovery = _setTimeout(() => {
       retryFromError();
@@ -239,7 +240,6 @@ export function createRadioCore(deps) {
 
     _clearTimeout(timers.loading);
     _clearTimeout(timers.recovery);
-    recoveryCount++;
 
     const index = getSelectedIndex();
     const playId = ++currentPlayId;

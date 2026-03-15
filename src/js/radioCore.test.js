@@ -735,7 +735,8 @@ describe('max recovery attempts', () => {
     await flushPromises();
     fireTimer(deps, RECOVERY_DELAY_MS);
     await flushPromises();
-    expect(core._getRecoveryCount()).toBe(2);
+    // count=3: initial scheduleRecovery(1) + two failed retryFromError re-schedules(2,3)
+    expect(core._getRecoveryCount()).toBe(3);
 
     // Now make recovery succeed
     deps._setPlayerPlayResult(Promise.resolve());
@@ -798,5 +799,33 @@ describe('max recovery attempts', () => {
 
     expect(core.getState()).toBe('playing');
     expect(core._getRecoveryCount()).toBe(0);
+  });
+
+  it('offline recovery loops are also bounded by MAX_RECOVERY_ATTEMPTS', async () => {
+    let online = true;
+    const { deps } = makeDeps({ isOnline: () => online });
+    deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
+    const core = createRadioCore(deps);
+
+    // Get to error state (online)
+    core.playRadio(0);
+    await flushPromises();
+    fireTimer(deps, 3000);
+    await flushPromises();
+    expect(core.getState()).toBe('error');
+
+    // Go offline and exhaust all recovery attempts
+    online = false;
+    for (let i = 0; i < MAX_RECOVERY_ATTEMPTS; i++) {
+      fireTimer(deps, RECOVERY_DELAY_MS);
+      await flushPromises();
+    }
+
+    expect(core.getState()).toBe('error');
+    expect(core._getRecoveryCount()).toBe(MAX_RECOVERY_ATTEMPTS);
+
+    // No more recovery timers — loop is capped even while offline
+    const hasRecoveryTimer = [...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS);
+    expect(hasRecoveryTimer).toBe(false);
   });
 });
