@@ -126,6 +126,13 @@ function audioInstance(htmlElement) {
 const loadingNoiseInstance = audioInstance(loadingNoise);
 const errorNoiseInstance = audioInstance(errorNoise);
 
+// Eagerly preload sound blobs for returning users so they're available offline.
+// fetch() doesn't need a user gesture — only playback does.
+if (hasRestoredStation) {
+  loadingNoiseInstance.preloadBlob();
+  errorNoiseInstance.preloadBlob();
+}
+
 // Shared helper — registers all MediaSession action handlers.
 // Called from both updateMediaSession() (every state transition) and
 // reRegisterMediaSessionHandlers() (after sound-effect playback steals focus).
@@ -328,8 +335,18 @@ player.addEventListener('stalled', () => {
 window.addEventListener('online', () => core.retryFromError());
 
 // Prev / Next
-prevButton.addEventListener('click', () => core.prevRadio());
-nextButton.addEventListener('click', () => core.nextRadio());
+prevButton.addEventListener('click', () => {
+  preloadAudioBlobs();
+  loadingNoiseInstance.warmUp();
+  errorNoiseInstance.warmUp();
+  core.prevRadio();
+});
+nextButton.addEventListener('click', () => {
+  preloadAudioBlobs();
+  loadingNoiseInstance.warmUp();
+  errorNoiseInstance.warmUp();
+  core.nextRadio();
+});
 
 // Keep alive worker
 const worker = new Worker("./js/keepAlive.js");
