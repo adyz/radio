@@ -64,6 +64,9 @@ async function minifyJS() {
                     mangle: true,
                     toplevel: true,
                 });
+                if (!result || !result.code) {
+                    throw new Error(`Terser returned empty output for ${file}`);
+                }
                 await fs.writeFile(outputFile, result.code);
                 console.log(`✅ Minified & Obfuscated (Strong): ${file}`);
             }

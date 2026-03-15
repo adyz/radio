@@ -84,7 +84,7 @@ self.addEventListener('fetch', (event) => {
         if (cached) return cached;
         try {
           const response = await fetch(event.request);
-          if (response.ok) cache.put(event.request, response.clone());
+          if (response.ok) await cache.put(event.request, response.clone());
           return response;
         } catch (_) {
           return new Response('', { status: 503, statusText: 'Offline' });
@@ -106,7 +106,7 @@ self.addEventListener('fetch', (event) => {
           const response = await fetch(event.request);
           if (response.ok) {
             const cache = await caches.open(APP_CACHE_NAME);
-            cache.put(event.request, response.clone());
+            await cache.put(event.request, response.clone());
           }
           return response;
         } catch (_) {

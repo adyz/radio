@@ -181,10 +181,10 @@ errorNoise.addEventListener('playing', reRegisterMediaSessionHandlers);
 // sound effect's finite duration.
 // Feature-detect once to avoid repeated exceptions on unsupported browsers.
 let canClearPositionState = true;
-try { navigator.mediaSession.setPositionState(); } catch (_) { canClearPositionState = false; }
+try { navigator.mediaSession.setPositionState({}); } catch (_) { canClearPositionState = false; }
 function clearSfxPositionState() {
   if (canClearPositionState) {
-    try { navigator.mediaSession.setPositionState(); } catch (_) { canClearPositionState = false; }
+    try { navigator.mediaSession.setPositionState({}); } catch (_) { canClearPositionState = false; }
   }
 }
 loadingNoise.addEventListener('timeupdate', clearSfxPositionState);
