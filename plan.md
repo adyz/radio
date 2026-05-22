@@ -19,6 +19,7 @@ Review-ul a scos cateva probleme clare:
 - Faza 3 este gata: storage invalid si resume rejection sunt tratate si acoperite de teste.
 - Faza 4 este gata: update-ul de Service Worker nu mai forteaza reload in timpul redarii.
 - Faza 5 este gata: flaky-ul din zona offline/sound a fost intarit cu preload determinist, blob memory, cache versioning si e2e-uri mai precise, iar testul istoric flaky a trecut repetat.
+- CI-ul ruleaza unit tests cu coverage, build si e2e, apoi publica un summary cu rezultatele si eventualele failures.
 - Faza 6 este scoasa din scope pentru moment.
 
 ## Faza 1: stabilizam toolchain-ul [gata]

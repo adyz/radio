@@ -183,3 +183,9 @@ npm run test:coverage  # unit coverage + raport HTML in coverage/index.html
 npm run test:e2e  # e2e tests (playwright, pornește singur serverul)
 npm run build     # build → public/
 ```
+
+## CI
+
+GitHub Actions rulează pe pull request-uri și pe push în `main`. Workflow-ul verifică unit tests cu coverage, build-ul și testele e2e în Chromium.
+
+La final, job-ul scrie un summary cu statusul fiecărui pas: câte unit/e2e tests au trecut, coverage-ul Vitest și detalii despre testele care au picat. Fișierele generate pentru summary (`reports/`) și raportul local de coverage (`coverage/`) sunt artefacte temporare și sunt ignorate de git.

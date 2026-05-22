@@ -5,7 +5,7 @@ export default defineConfig({
     exclude: ['node_modules/**', 'public/**', 'e2e/**'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'html', 'lcov'],
+      reporter: ['text', 'html', 'lcov', 'json-summary'],
       reportsDirectory: 'coverage',
       include: ['src/js/radioCore.js', 'src/js/stateMachine.js'],
     },
