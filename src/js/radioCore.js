@@ -164,6 +164,11 @@ export function createRadioCore(deps) {
 
   function handleResumeError(error) {
     if (error?.name === 'AbortError') return;
+    try {
+      playerPause();
+    } catch (_) {
+      // Keep resume error handling focused on restoring state.
+    }
     if (getState() === 'paused') setState('paused');
   }
 

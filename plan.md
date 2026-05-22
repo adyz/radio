@@ -53,8 +53,8 @@ Obiectiv: app-ul nu trebuie sa intre in stare invalida cand browserul refuza aut
 
 - Validam `lastRadioIndex`:
   - parse sigur;
-  - clamp la intervalul valid;
-  - fallback la index `0` cand valoarea e invalida.
+  - folosim valoarea doar daca este in intervalul valid;
+  - daca valoarea este invalida sau in afara intervalului, pastram selectia implicita a paginii (in prezent index `0`).
 - Tratam reject-ul de la `player.play()` in `resumeRadio`, `togglePlayPause` si `onPlayButtonClick` cand reia din pauza.
 - Decidem comportamentul dorit la reject:
   - fie revenim la `paused`;

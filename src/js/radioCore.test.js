@@ -662,12 +662,15 @@ describe('resume failures', () => {
     core.onPlayerPause();
     expect(core.getState()).toBe('paused');
 
+    const pauseCallsBeforeResume = calls.playerPause.length;
     deps._setPlayerPlayResult(new Promise((_, reject) => { rejectResume = reject; }));
     const resume = core.resumeRadio();
     rejectResume(new Error('resume blocked'));
     await resume;
 
     expect(core.getState()).toBe('paused');
+    expect(calls.paused).toBe(true);
+    expect(calls.playerPause.length).toBe(pauseCallsBeforeResume + 1);
     expect(calls.showButton.at(-1)).toBe('play');
   });
 
@@ -682,16 +685,19 @@ describe('resume failures', () => {
     calls.paused = true;
     expect(core.getState()).toBe('paused');
 
+    const pauseCallsBeforeResume = calls.playerPause.length;
     deps._setPlayerPlayResult(new Promise((_, reject) => { rejectResume = reject; }));
     const resume = core.togglePlayPause();
     rejectResume(new Error('resume blocked'));
     await resume;
 
     expect(core.getState()).toBe('paused');
+    expect(calls.paused).toBe(true);
+    expect(calls.playerPause.length).toBe(pauseCallsBeforeResume + 1);
   });
 
   it('onPlayButtonClick keeps paused when resume rejects', async () => {
-    const { deps } = makeDeps();
+    const { deps, calls } = makeDeps();
     const core = createRadioCore(deps);
     let rejectResume;
 
@@ -700,12 +706,15 @@ describe('resume failures', () => {
     core.onPlayerPause();
     expect(core.getState()).toBe('paused');
 
+    const pauseCallsBeforeResume = calls.playerPause.length;
     deps._setPlayerPlayResult(new Promise((_, reject) => { rejectResume = reject; }));
     const resume = core.onPlayButtonClick();
     rejectResume(new Error('resume blocked'));
     await resume;
 
     expect(core.getState()).toBe('paused');
+    expect(calls.paused).toBe(true);
+    expect(calls.playerPause.length).toBe(pauseCallsBeforeResume + 1);
   });
 
   it('resumeRadio handles playerPlay without a promise', async () => {
@@ -742,9 +751,12 @@ describe('resume failures', () => {
     core.onPlayerPause();
     expect(core.getState()).toBe('paused');
 
+    const pauseCallsBeforeResume = calls.playerPause.length;
     await core.resumeRadio();
 
     expect(core.getState()).toBe('paused');
+    expect(calls.paused).toBe(true);
+    expect(calls.playerPause.length).toBe(pauseCallsBeforeResume + 1);
   });
 });
 
