@@ -84,24 +84,31 @@ if (hasRestoredStation) {
 // MediaSession action handlers are re-registered on every state transition to
 // prevent iOS from resetting them when a different <audio> element takes over.
 
-async function cacheSoundResponse(src, response) {
+async function openSoundCache() {
   if (!('caches' in window)) return;
   try {
-    const cache = await caches.open(SOUND_CACHE_NAME);
-    await cache.put(src, response.clone());
+    return await caches.open(SOUND_CACHE_NAME);
+  } catch (_) {
+    return null;
+  }
+}
+
+async function cacheSoundResponse(src, response) {
+  try {
+    const cache = await openSoundCache();
+    if (cache) await cache.put(src, response.clone());
   } catch (_) {
     // Cache writes are best-effort; the in-memory blob still matters most.
   }
 }
 
 async function getSoundResponse(src) {
-  if ('caches' in window) {
-    try {
-      const cached = await caches.match(src);
-      if (cached) return cached;
-    } catch (_) {
-      // Cache reads are best-effort; fall back to network.
-    }
+  const cache = await openSoundCache();
+  try {
+    const cached = await cache?.match(src);
+    if (cached) return cached;
+  } catch (_) {
+    // Cache reads are best-effort; fall back to network.
   }
 
   const response = await fetch(src);

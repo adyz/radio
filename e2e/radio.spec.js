@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 
 const STREAM_URL_RE = /live\.kissfm|europafm|digifm|magicfm|virginradio|srr\.ro|profm|rockfm|guerrillaradio|nationalfm|dancefm|radiovibefm|radioprob|vanillaradio/;
 const SOUND_URL_RE = /\/sounds\/(?:loading-low|error-low)\.mp3(?:\?.*)?$/;
+const SOUND_CACHE_NAME = 'radio-sounds-v1';
 
 // Helper: intercept all radio stream URLs and serve our local test tone instead
 async function mockStreams(page) {
@@ -489,5 +490,55 @@ test.describe('Offline — cached resources', () => {
       const img = document.querySelector('#posterImage img');
       return img.complete && img.naturalWidth > 0;
     }, { timeout: 5000 });
+  });
+});
+
+test.describe('Sound cache versioning', () => {
+  test.use({ serviceWorkers: 'block' });
+
+  test('sound preload ignores stale entries from older sound caches', async ({ page }) => {
+    await page.goto('/manifest.json');
+
+    await page.evaluate(async (soundCacheName) => {
+      await caches.delete(soundCacheName);
+      const oldCache = await caches.open('radio-sounds-stale');
+      await Promise.all(
+        ['loading-low', 'error-low'].map((name) =>
+          oldCache.put(
+            new URL(`./sounds/${name}.mp3`, location.href).href,
+            new Response(`stale-${name}`, { headers: { 'Content-Type': 'audio/mpeg' } }),
+          )
+        )
+      );
+    }, SOUND_CACHE_NAME);
+
+    await page.route(/res\.cloudinary\.com/, (route) =>
+      route.fulfill({ status: 200, contentType: 'image/png', body: Buffer.alloc(0) }));
+    await page.route(SOUND_URL_RE, (route) => {
+      const isLoading = route.request().url().includes('loading-low');
+      route.fulfill({
+        status: 200,
+        contentType: 'audio/mpeg',
+        body: isLoading ? 'fresh-loading' : 'fresh-error',
+      });
+    });
+
+    await page.goto('/');
+    await waitForSoundBlobs(page);
+
+    const cachedBodies = await page.evaluate(async (soundCacheName) => {
+      const cache = await caches.open(soundCacheName);
+      const loading = await cache.match(new URL('./sounds/loading-low.mp3', location.href).href);
+      const error = await cache.match(new URL('./sounds/error-low.mp3', location.href).href);
+      return {
+        loading: await loading?.text(),
+        error: await error?.text(),
+      };
+    }, SOUND_CACHE_NAME);
+
+    expect(cachedBodies).toEqual({
+      loading: 'fresh-loading',
+      error: 'fresh-error',
+    });
   });
 });
