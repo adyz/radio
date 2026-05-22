@@ -1,8 +1,11 @@
 import { test, expect } from '@playwright/test';
 
+const STREAM_URL_RE = /live\.kissfm|europafm|digifm|magicfm|virginradio|srr\.ro|profm|rockfm|guerrillaradio|nationalfm|dancefm|radiovibefm|radioprob|vanillaradio/;
+const SOUND_URL_RE = /\/sounds\/(?:loading-low|error-low)\.mp3(?:\?.*)?$/;
+
 // Helper: intercept all radio stream URLs and serve our local test tone instead
 async function mockStreams(page) {
-  await page.route(/live\.kissfm|europafm|digifm|magicfm|virginradio|srr\.ro|profm|rockfm|guerrillaradio|nationalfm|dancefm|radiovibefm|radioprob|vanillaradio/, async (route) => {
+  await page.route(STREAM_URL_RE, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'audio/mpeg',
@@ -13,9 +16,34 @@ async function mockStreams(page) {
 
 // Helper: intercept streams and respond with an error
 async function mockStreamsError(page) {
-  await page.route(/live\.kissfm|europafm|digifm|magicfm|virginradio|srr\.ro|profm|rockfm|guerrillaradio|nationalfm|dancefm|radiovibefm|radioprob|vanillaradio/, (route) => {
+  await page.route(STREAM_URL_RE, (route) => {
     route.abort('internetdisconnected');
   });
+}
+
+async function waitForSoundBlobs(page) {
+  await page.waitForFunction(() =>
+    ['loadingNoise', 'errorNoise'].every((id) =>
+      document.getElementById(id)?.dataset.blobReady === 'true'
+    ),
+    { timeout: 10000 },
+  );
+}
+
+async function blockLateSoundRequests(page) {
+  const lateSoundRequests = [];
+  await page.route(SOUND_URL_RE, (route) => {
+    lateSoundRequests.push(route.request().url());
+    route.abort('failed');
+  });
+  return lateSoundRequests;
+}
+
+async function expectSoundPlayingFromBlob(page, id) {
+  await page.waitForFunction((audioId) => {
+    const el = document.getElementById(audioId);
+    return Boolean(el && !el.paused && el.src.startsWith('blob:'));
+  }, id, { timeout: 3000 });
 }
 
 // -------------------------------------------------------------------
@@ -68,7 +96,7 @@ test.describe('Radio Player E2E', () => {
 
   test('clicking stop returns to idle', async ({ page }) => {
     // Delay stream response so loading state lasts long enough to click stop
-    await page.route(/live\.kissfm|europafm|digifm|magicfm|virginradio|srr\.ro|profm|rockfm|guerrillaradio|nationalfm|dancefm|radiovibefm|radioprob|vanillaradio/, async (route) => {
+    await page.route(STREAM_URL_RE, async (route) => {
       await new Promise(r => setTimeout(r, 2000));
       await route.fulfill({
         status: 200,
@@ -308,6 +336,55 @@ test.describe('Offline — cached resources', () => {
 
   // --- Sounds ---
 
+  test('preloads loading and error sounds into blob memory on page load', async ({ page }) => {
+    await page.route(/res\.cloudinary\.com/, (route) =>
+      route.fulfill({ status: 200, contentType: 'image/png', body: PIXEL_PNG }));
+
+    await page.goto('/');
+    await waitForSoundBlobs(page);
+
+    const blobStates = await page.evaluate(() => ({
+      loading: document.getElementById('loadingNoise').dataset.blobReady,
+      error: document.getElementById('errorNoise').dataset.blobReady,
+    }));
+
+    expect(blobStates).toEqual({ loading: 'true', error: 'true' });
+  });
+
+  test('loading sound uses preloaded blob on first play without late sound network', async ({ page }) => {
+    await page.route(/res\.cloudinary\.com/, (route) =>
+      route.fulfill({ status: 200, contentType: 'image/png', body: PIXEL_PNG }));
+    await page.route(STREAM_URL_RE, () => {
+      // Keep the stream pending so the app remains in loading state.
+    });
+
+    await page.goto('/');
+    await waitForSoundBlobs(page);
+    const lateSoundRequests = await blockLateSoundRequests(page);
+
+    await page.locator('#playButton').click();
+    await expect(page.locator('#loadingMsg')).not.toHaveClass(/invisible/, { timeout: 3000 });
+    await expectSoundPlayingFromBlob(page, 'loadingNoise');
+
+    expect(lateSoundRequests).toEqual([]);
+  });
+
+  test('offline station change stops loading warmup when error sound starts', async ({ page }) => {
+    await page.route(/res\.cloudinary\.com/, (route) =>
+      route.fulfill({ status: 200, contentType: 'image/png', body: PIXEL_PNG }));
+
+    await page.goto('/');
+    await waitForSoundBlobs(page);
+    await page.context().setOffline(true);
+
+    await page.locator('#nextButton').click();
+    await expect(page.locator('#errorMsg')).not.toHaveClass(/invisible/, { timeout: 3000 });
+    await expectSoundPlayingFromBlob(page, 'errorNoise');
+
+    const loadingPaused = await page.evaluate(() => document.getElementById('loadingNoise').paused);
+    expect(loadingPaused).toBe(true);
+  });
+
   test('error sound plays offline from preloaded blob', async ({ page }) => {
     await page.route(/res\.cloudinary\.com/, (route) =>
       route.fulfill({ status: 200, contentType: 'image/png', body: PIXEL_PNG }));
@@ -317,8 +394,8 @@ test.describe('Offline — cached resources', () => {
     await page.locator('#playButton').click();
     await expect(page.locator('#pauseButton')).toBeVisible({ timeout: 8000 });
 
-    // Wait for blob preload to finish
-    await page.waitForTimeout(2000);
+    await waitForSoundBlobs(page);
+    const lateSoundRequests = await blockLateSoundRequests(page);
 
     await page.context().setOffline(true);
 
@@ -326,16 +403,8 @@ test.describe('Offline — cached resources', () => {
     await page.locator('#nextButton').click();
     await expect(page.locator('#errorMsg')).not.toHaveClass(/invisible/, { timeout: 3000 });
 
-    // Give audio time to start
-    await page.waitForTimeout(300);
-
-    const { paused, src } = await page.evaluate(() => {
-      const el = document.getElementById('errorNoise');
-      return { paused: el.paused, src: el.src };
-    });
-
-    expect(paused).toBe(false);
-    expect(src).toMatch(/^blob:/);
+    await expectSoundPlayingFromBlob(page, 'errorNoise');
+    expect(lateSoundRequests).toEqual([]);
   });
 
   test('loading sound plays from preloaded blob', async ({ page }) => {
@@ -345,7 +414,7 @@ test.describe('Offline — cached resources', () => {
     // Stream mock with a flag to simulate slow/stuck response
     let blockStream = false;
     await page.route(
-      /live\.kissfm|europafm|digifm|magicfm|virginradio|srr\.ro|profm|rockfm|guerrillaradio|nationalfm|dancefm|radiovibefm|radioprob|vanillaradio/,
+      STREAM_URL_RE,
       async (route) => {
         if (blockStream) return; // never respond → stays in loading
         await route.fulfill({
@@ -360,8 +429,8 @@ test.describe('Offline — cached resources', () => {
     await page.locator('#playButton').click();
     await expect(page.locator('#pauseButton')).toBeVisible({ timeout: 8000 });
 
-    // Wait for blob preload to finish
-    await page.waitForTimeout(2000);
+    await waitForSoundBlobs(page);
+    const lateSoundRequests = await blockLateSoundRequests(page);
 
     // Block stream so next station stays in loading state
     blockStream = true;
@@ -369,15 +438,8 @@ test.describe('Offline — cached resources', () => {
     await page.locator('#nextButton').click();
     await expect(page.locator('#loadingMsg')).not.toHaveClass(/invisible/, { timeout: 3000 });
 
-    await page.waitForTimeout(300);
-
-    const { paused, src } = await page.evaluate(() => {
-      const el = document.getElementById('loadingNoise');
-      return { paused: el.paused, src: el.src };
-    });
-
-    expect(paused).toBe(false);
-    expect(src).toMatch(/^blob:/);
+    await expectSoundPlayingFromBlob(page, 'loadingNoise');
+    expect(lateSoundRequests).toEqual([]);
   });
 
   test('sounds and error image work offline without prior play (SW pre-cache)', async ({ page }) => {
