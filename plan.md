@@ -12,7 +12,16 @@ Review-ul a scos cateva probleme clare:
 - Exista cateva cazuri runtime fragile: `lastRadioIndex` invalid, `player.play()` reject la resume, reload de service worker in mijlocul sesiunii.
 - E2E are un test care trece izolat, dar pica uneori in suita completa.
 
-## Faza 1: stabilizam toolchain-ul
+## Status curent
+
+- Faza 1 este gata: proiectul documenteaza si foloseste Node 20.19+.
+- Faza 2 este gata: build-ul este fail-fast, curata `public/` si nu mai publica fisiere de test.
+- Faza 3 este gata: storage invalid si resume rejection sunt tratate si acoperite de teste.
+- Faza 4 este gata: update-ul de Service Worker nu mai forteaza reload in timpul redarii.
+- Faza 5 este gata: flaky-ul din zona offline/sound a fost intarit cu preload determinist, blob memory, cache versioning si e2e-uri mai precise, iar testul istoric flaky a trecut repetat.
+- Faza 6 este scoasa din scope pentru moment.
+
+## Faza 1: stabilizam toolchain-ul [gata]
 
 Obiectiv: comenzile de baza trebuie sa fie predictibile local si in deploy.
 
@@ -25,7 +34,7 @@ Obiectiv: comenzile de baza trebuie sa fie predictibile local si in deploy.
   - `npm test`
   - `npm run build`
 
-## Faza 2: facem build-ul fail-fast
+## Faza 2: facem build-ul fail-fast [gata]
 
 Obiectiv: daca un pas de build crapa, deploy-ul trebuie sa crape si el.
 
@@ -37,7 +46,7 @@ Obiectiv: daca un pas de build crapa, deploy-ul trebuie sa crape si el.
   - `npm run build`
   - confirmare ca `public/js/radioCore.test.js` nu mai apare dupa build.
 
-## Faza 3: intarim runtime-ul audio/state
+## Faza 3: intarim runtime-ul audio/state [gata]
 
 Obiectiv: app-ul nu trebuie sa intre in stare invalida cand browserul refuza autoplay/resume sau storage-ul e corupt.
 
@@ -54,7 +63,7 @@ Obiectiv: app-ul nu trebuie sa intre in stare invalida cand browserul refuza aut
   - unit tests pentru storage invalid si `player.play()` reject;
   - e2e smoke pentru play/pause/resume.
 
-## Faza 4: service worker fara reload agresiv
+## Faza 4: service worker fara reload agresiv [gata]
 
 Obiectiv: update-ul PWA sa nu intrerupa redarea sau testele.
 
@@ -69,25 +78,29 @@ Obiectiv: update-ul PWA sa nu intrerupa redarea sau testele.
   - e2e pentru load/reload;
   - verificare manuala ca redarea nu se opreste la update SW.
 
-## Faza 5: stabilizam E2E
+## Faza 5: stabilizam E2E [gata]
 
 Obiectiv: testele sa treaca repetabil ca suita, nu doar individual.
 
-- Investigam testul flaky: `error sound plays offline from preloaded blob`.
-- Ipoteze:
-  - reload provocat de service worker in timpul asteptarii pentru `#pauseButton`;
-  - cache/SW state ramas intre teste;
-  - asteptare prea legata de buton, nu de starea audio reala.
-- Actiuni:
-  - izolare explicita pentru service workers/cache/localStorage in `beforeEach` unde conteaza;
-  - asteptari pe semnale mai directe (`player.paused`, src blob, mesaj vizibil), nu doar `#pauseButton`;
-  - eventual grup separat pentru testele offline/SW.
+- Testul istoric flaky: `error sound plays offline from preloaded blob`.
+- Ce am stabilizat:
+  - sunetele de loading/error sunt preincarcate in blob memory la page load;
+  - `play()` asteapta preload-ul in curs in loc sa cada inapoi imediat pe URL-ul original;
+  - testele verifica explicit `audio.src` cu `blob:`;
+  - testele blocheaza requesturi tarzii la `/sounds/*.mp3` dupa preload;
+  - `loadingNoise.stop()` opreste si warm-up-uri pornite, nu doar playback-ul marcat intern ca activ;
+  - preload-ul citeste doar din cache-ul curent `SOUND_CACHE_NAME`, ca bump-ul de versiune sa nu refoloseasca sunete vechi.
+- Verificari deja trecute:
+  - `npm run test:e2e` trece ca suita completa cu 23/23;
+  - e2e dedicat pentru cache versioning trece;
+  - e2e dedicat pentru loading sound ramas in fundal trece.
+  - testul istoric flaky `error sound plays offline from preloaded blob` a trecut 10/10 cu `--repeat-each=10`.
 - Fisiere: `e2e/radio.spec.js`, `playwright.config.js`.
 - Verificari:
   - `npm run test:e2e`
   - rulare repetata a testului flaky de 5-10 ori.
 
-## Faza 6: mici polish-uri UI/UX cu impact tehnic
+## Faza 6: mici polish-uri UI/UX cu impact tehnic [scos din scope]
 
 Obiectiv: imbunatatiri mici, fara redesign.
 
@@ -104,11 +117,8 @@ Obiectiv: imbunatatiri mici, fara redesign.
 
 ## Ordine recomandata
 
-1. Toolchain + build fail-fast.
-2. Runtime guards in `radioCore`/`script`.
-3. Service worker reload policy.
-4. E2E stability.
-5. UI/a11y polish.
+1. Nu mai exista puncte tehnice active in plan.
+2. UI/a11y polish ramane scos din scope pana cand devine prioritar.
 
 ## Definition of done
 
@@ -118,4 +128,5 @@ Obiectiv: imbunatatiri mici, fara redesign.
 - Nu se publica fisiere de test in `public/`.
 - App-ul porneste corect cu `lastRadioIndex` invalid.
 - Resume/play rejection nu lasa UI-ul intr-o stare mincinoasa.
-- Selectorul e mai usor de apasat si accesibil din tastatura.
+- Sunetele de loading/error pornesc din blob memory dupa preload si nu fac requesturi tarzii la momentul critic.
+- Bump-ul de `SOUND_CACHE_NAME` nu refoloseste accidental sunete din cache-uri vechi.
