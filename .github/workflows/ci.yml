@@ -6,16 +6,21 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
 jobs:
   test:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version-file: .nvmrc
           cache: npm
@@ -60,3 +65,67 @@ jobs:
           PLAYWRIGHT_INSTALL_OUTCOME: ${{ steps.playwright.outcome }}
           E2E_OUTCOME: ${{ steps.e2e.outcome }}
         run: node scripts/write-ci-summary.mjs
+
+      - name: Comment CI summary on PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- radio-player-ci-summary -->';
+            const body = fs.readFileSync('reports/ci-summary.md', 'utf8');
+            const { owner, repo } = context.repo;
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const previousComment = comments.find(comment =>
+              comment.user?.type === 'Bot' && comment.body?.includes(marker)
+            );
+
+            if (previousComment) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: previousComment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
+
+      - name: Fail CI if checks failed
+        if: always()
+        shell: bash
+        run: |
+          failed=0
+
+          if [[ "${{ steps.unit.outcome }}" != "success" ]]; then
+            echo "Unit tests failed or did not run."
+            failed=1
+          fi
+
+          if [[ "${{ steps.build.outcome }}" != "success" ]]; then
+            echo "Build failed or did not run."
+            failed=1
+          fi
+
+          if [[ "${{ steps.playwright.outcome }}" != "success" ]]; then
+            echo "Playwright browser install failed or did not run."
+            failed=1
+          fi
+
+          if [[ "${{ steps.e2e.outcome }}" != "success" ]]; then
+            echo "E2E tests failed or did not run."
+            failed=1
+          fi
+
+          exit "$failed"

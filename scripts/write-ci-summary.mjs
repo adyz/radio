@@ -3,6 +3,8 @@ import path from 'node:path';
 
 const root = process.cwd();
 const reportsDir = path.join(root, 'reports');
+const summaryFile = path.join(reportsDir, 'ci-summary.md');
+const commentMarker = '<!-- radio-player-ci-summary -->';
 
 const outcomes = {
   unit: process.env.UNIT_OUTCOME || 'unknown',
@@ -20,44 +22,37 @@ const rows = [
   {
     check: 'Unit tests',
     status: statusFor(outcomes.unit, unitReport?.success === false),
-    result: unitResult(unitReport),
-    coverage: coverageResult(coverageSummary),
+    result: resultWithCoverage(unitResult(unitReport), coverageSummary),
   },
   {
     check: 'Build',
     status: statusFor(outcomes.build),
     result: outcomes.build === 'success' ? 'Build completed' : 'See build logs',
-    coverage: '-',
   },
   {
     check: 'Playwright browser',
     status: statusFor(outcomes.playwright),
     result: outcomes.playwright === 'success' ? 'Chromium installed' : 'Browser install failed',
-    coverage: '-',
   },
   {
     check: 'E2E tests',
     status: statusFor(outcomes.e2e, e2eHasFailures(e2eReport)),
     result: e2eResult(e2eReport, outcomes.e2e),
-    coverage: '-',
   },
 ];
 
 const markdown = [
   '# CI Summary',
   '',
-  '| Check | Status | Result | Coverage |',
-  '|---|---:|---|---|',
-  ...rows.map(row => `| ${cell(row.check)} | ${cell(row.status)} | ${cell(row.result)} | ${cell(row.coverage)} |`),
+  '| Check | Status | Result |',
+  '|---|---:|---|',
+  ...rows.map(row => `| ${cell(row.check)} | ${cell(row.status)} | ${cell(row.result)} |`),
   '',
   ...failureDetails(),
 ].join('\n');
 
 writeSummary(markdown);
-
-if (hasFailedChecks()) {
-  process.exitCode = 1;
-}
+writeCommentSummary(markdown);
 
 function readJson(filePath) {
   try {
@@ -101,7 +96,7 @@ function unitResult(report) {
 
 function coverageResult(summary) {
   const total = summary?.total;
-  if (!total) return 'No coverage report';
+  if (!total) return '';
 
   return [
     `Lines ${pct(total.lines)}`,
@@ -109,6 +104,12 @@ function coverageResult(summary) {
     `Functions ${pct(total.functions)}`,
     `Statements ${pct(total.statements)}`,
   ].join(', ');
+}
+
+function resultWithCoverage(result, summary) {
+  const coverage = coverageResult(summary);
+  if (!coverage) return result;
+  return `${result}; Coverage: ${coverage}`;
 }
 
 function pct(metric) {
@@ -285,10 +286,6 @@ function cell(value) {
   return String(value).replace(/\|/g, '\\|').replace(/\n/g, '<br>');
 }
 
-function hasFailedChecks() {
-  return rows.some(row => row.status === 'FAIL' || row.status === 'SKIPPED' || row.status === 'CANCELLED' || row.status === 'UNKNOWN');
-}
-
 function writeSummary(text) {
   const summaryPath = process.env.GITHUB_STEP_SUMMARY;
   const output = `${text}\n`;
@@ -299,4 +296,9 @@ function writeSummary(text) {
   }
 
   console.log(output);
+}
+
+function writeCommentSummary(text) {
+  fs.mkdirSync(reportsDir, { recursive: true });
+  fs.writeFileSync(summaryFile, `${commentMarker}\n${text}\n`);
 }
