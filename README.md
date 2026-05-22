@@ -161,6 +161,14 @@ npm run test:e2e  # playwright test
 
 ## Dev
 
+Node.js 20.19+ is required because the current Vitest/Vite toolchain depends on a Vite version that does not run correctly on older Node 18 builds. Use the committed `.nvmrc` before installing dependencies or running tests:
+
+```bash
+nvm install
+nvm use
+node --version  # should be v20.19.0 or newer
+```
+
 ```bash
 npm run dev       # live-server + tailwind watch
 npm test          # unit tests (vitest)
