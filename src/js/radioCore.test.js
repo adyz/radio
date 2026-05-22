@@ -606,6 +606,64 @@ describe('togglePlayPause', () => {
   });
 });
 
+describe('resume failures', () => {
+  it('resumeRadio keeps paused when playerPlay rejects', async () => {
+    const { deps, calls } = makeDeps();
+    const core = createRadioCore(deps);
+    let rejectResume;
+
+    core.playRadio(0);
+    await flushPromises();
+    core.onPlayerPause();
+    expect(core.getState()).toBe('paused');
+
+    deps._setPlayerPlayResult(new Promise((_, reject) => { rejectResume = reject; }));
+    const resume = core.resumeRadio();
+    rejectResume(new Error('resume blocked'));
+    await resume;
+
+    expect(core.getState()).toBe('paused');
+    expect(calls.showButton.at(-1)).toBe('play');
+  });
+
+  it('togglePlayPause keeps paused when resume rejects', async () => {
+    const { deps, calls } = makeDeps();
+    const core = createRadioCore(deps);
+    let rejectResume;
+
+    core.playRadio(0);
+    await flushPromises();
+    core.onPlayerPause();
+    calls.paused = true;
+    expect(core.getState()).toBe('paused');
+
+    deps._setPlayerPlayResult(new Promise((_, reject) => { rejectResume = reject; }));
+    const resume = core.togglePlayPause();
+    rejectResume(new Error('resume blocked'));
+    await resume;
+
+    expect(core.getState()).toBe('paused');
+  });
+
+  it('onPlayButtonClick keeps paused when resume rejects', async () => {
+    const { deps } = makeDeps();
+    const core = createRadioCore(deps);
+    let rejectResume;
+
+    core.playRadio(0);
+    await flushPromises();
+    core.onPlayerPause();
+    expect(core.getState()).toBe('paused');
+
+    deps._setPlayerPlayResult(new Promise((_, reject) => { rejectResume = reject; }));
+    const resume = core.onPlayButtonClick();
+    rejectResume(new Error('resume blocked'));
+    await resume;
+
+    expect(core.getState()).toBe('paused');
+  });
+});
+
 // =============================================
 // RESTART AFTER LONG PAUSE
 // =============================================

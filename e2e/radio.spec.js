@@ -187,6 +187,20 @@ test.describe('Radio Player E2E', () => {
     await expect(page.locator('#posterImage img')).toHaveAttribute('src', /Digi/, { timeout: 5000 });
   });
 
+  test('ignores invalid saved station index', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('lastRadioIndex', '999');
+    });
+    await page.goto('/');
+
+    await expect(page.locator('#playButton')).toBeVisible();
+    await expect(page.locator('#posterImage img')).toHaveAttribute('src', /Coji%20Radio%20Player/);
+
+    await page.locator('#new_selector__button').click();
+    const buttons = page.locator('#new_selector__content button:not(.hidden)');
+    await expect(buttons).toHaveCount(18);
+  });
+
   // --- Loading / Error messages ---
 
   test('loading message appears during stream connection', async ({ page }) => {

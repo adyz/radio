@@ -62,9 +62,17 @@ if ('caches' in window) {
 }
 
 // Restore last station before anything reads selectedIndex
-const hasRestoredStation = localStorage.getItem('lastRadioIndex') !== null;
+function getStoredStationIndex() {
+  const parsed = Number.parseInt(localStorage.getItem('lastRadioIndex'), 10);
+  if (!Number.isInteger(parsed)) return null;
+  if (parsed < 0 || parsed >= radioSelect.options.length) return null;
+  return parsed;
+}
+
+const restoredStationIndex = getStoredStationIndex();
+const hasRestoredStation = restoredStationIndex !== null;
 if (hasRestoredStation) {
-  radioSelect.selectedIndex = parseInt(localStorage.getItem('lastRadioIndex'), 10);
+  radioSelect.selectedIndex = restoredStationIndex;
 }
 
 // --- Sound effects via <audio> elements ---

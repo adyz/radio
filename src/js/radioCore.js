@@ -162,14 +162,32 @@ export function createRadioCore(deps) {
     playerPause();
   }
 
+  function handleResumeError(error) {
+    if (error?.name === 'AbortError') return;
+    if (getState() === 'paused') setState('paused');
+  }
+
+  function resumePlayer() {
+    try {
+      const playPromise = playerPlay();
+      if (!playPromise || typeof playPromise.catch !== 'function') {
+        return Promise.resolve(playPromise);
+      }
+      return playPromise.catch(handleResumeError);
+    } catch (error) {
+      handleResumeError(error);
+      return Promise.resolve();
+    }
+  }
+
   function resumeRadio() {
-    playerPlay();
+    return resumePlayer();
   }
 
   function togglePlayPause() {
     if (playerIsPaused()) {
       const s = getState();
-      if (s === 'paused') playerPlay();
+      if (s === 'paused') return resumePlayer();
       else if (s === 'idle' || s === 'error' || s === 'recovering') {
         _clearTimeout(timers.recovery);
         playRadio(getSelectedIndex());
@@ -281,7 +299,7 @@ export function createRadioCore(deps) {
       _clearTimeout(timers.recovery);
       playRadio(getSelectedIndex());
     } else if (s === 'paused') {
-      playerPlay();
+      return resumePlayer();
     }
   }
 
