@@ -3,3 +3,5 @@ public
 .env
 src/css/output.css
 test-results/
+coverage/
+reports/

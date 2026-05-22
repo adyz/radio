@@ -32,6 +32,10 @@ const LABELS = {
   error:    'Eroare',
 };
 
+// Keep in sync with src/sw.js so page-level preloads and SW precache share
+// the same durable sound cache.
+const SOUND_CACHE_NAME = 'radio-sounds-v1';
+
 function cloudinaryImageUrl(text, live = false) {
   const url_non_live = 'nndti4oybhdzggf8epvh';
   const url_live = 'rhz6yy4btbqicjqhsy7a';
@@ -62,9 +66,17 @@ if ('caches' in window) {
 }
 
 // Restore last station before anything reads selectedIndex
-const hasRestoredStation = localStorage.getItem('lastRadioIndex') !== null;
+function getStoredStationIndex() {
+  const parsed = Number.parseInt(localStorage.getItem('lastRadioIndex'), 10);
+  if (!Number.isInteger(parsed)) return null;
+  if (parsed < 0 || parsed >= radioSelect.options.length) return null;
+  return parsed;
+}
+
+const restoredStationIndex = getStoredStationIndex();
+const hasRestoredStation = restoredStationIndex !== null;
 if (hasRestoredStation) {
-  radioSelect.selectedIndex = parseInt(localStorage.getItem('lastRadioIndex'), 10);
+  radioSelect.selectedIndex = restoredStationIndex;
 }
 
 // --- Sound effects via <audio> elements ---
@@ -72,7 +84,38 @@ if (hasRestoredStation) {
 // MediaSession action handlers are re-registered on every state transition to
 // prevent iOS from resetting them when a different <audio> element takes over.
 
-let blobsPreloaded = false;
+async function openSoundCache() {
+  if (!('caches' in window)) return;
+  try {
+    return await caches.open(SOUND_CACHE_NAME);
+  } catch (_) {
+    return null;
+  }
+}
+
+async function cacheSoundResponse(src, response) {
+  try {
+    const cache = await openSoundCache();
+    if (cache) await cache.put(src, response.clone());
+  } catch (_) {
+    // Cache writes are best-effort; the in-memory blob still matters most.
+  }
+}
+
+async function getSoundResponse(src) {
+  const cache = await openSoundCache();
+  try {
+    const cached = await cache?.match(src);
+    if (cached) return cached;
+  } catch (_) {
+    // Cache reads are best-effort; fall back to network.
+  }
+
+  const response = await fetch(src);
+  if (!response.ok) throw new Error(response.status);
+  await cacheSoundResponse(src, response);
+  return response;
+}
 
 function audioInstance(htmlElement) {
   let initialSrc = htmlElement.querySelector('source').src;
@@ -80,48 +123,76 @@ function audioInstance(htmlElement) {
   let blobUrl = null;
   let playGeneration = 0;
   let preloadPromise = null;
+  htmlElement.dataset.blobReady = 'false';
 
   const preloadBlob = () => {
-    if (blobUrl || preloadPromise) return;
-    preloadPromise = fetch(initialSrc)
-      .then(r => { if (!r.ok) throw new Error(r.status); return r.blob(); })
-      .then(blob => { blobUrl = URL.createObjectURL(blob); })
+    if (blobUrl) return Promise.resolve(blobUrl);
+    if (preloadPromise) return preloadPromise;
+
+    htmlElement.dataset.blobReady = 'pending';
+    preloadPromise = getSoundResponse(initialSrc)
+      .then(r => r.blob())
+      .then(blob => {
+        if (blobUrl) URL.revokeObjectURL(blobUrl);
+        blobUrl = URL.createObjectURL(blob);
+        htmlElement.dataset.blobReady = 'true';
+        return blobUrl;
+      })
       .catch(err => {
-        preloadPromise = null;
+        htmlElement.dataset.blobReady = 'false';
         console.warn('Audio blob preload failed:', initialSrc, err);
-      });
+        return null;
+      })
+      .finally(() => { preloadPromise = null; });
+
+    return preloadPromise;
+  };
+
+  const startPlayback = (gen) => {
+    if (gen !== playGeneration || !isPlaying) return;
+    htmlElement.volume = 1;
+    htmlElement.src = blobUrl || initialSrc;
+    htmlElement.currentTime = 0;
+    htmlElement.play().catch((error) => {
+      if (gen !== playGeneration) return;
+      if (error.name !== 'AbortError') console.error('Error playing audio:', error);
+      isPlaying = false;
+    });
   };
 
   return {
     play() {
       if (!isPlaying) {
         const gen = ++playGeneration;
-        htmlElement.volume = 1;
-        htmlElement.src = blobUrl || initialSrc;
-        htmlElement.currentTime = 0;
         isPlaying = true;
-        htmlElement.play().catch((error) => {
-          if (gen !== playGeneration) return;
-          if (error.name !== 'AbortError') console.error('Error playing audio:', error);
-          isPlaying = false;
-        });
+        if (blobUrl) {
+          startPlayback(gen);
+          return;
+        }
+        preloadBlob().then(() => startPlayback(gen));
       }
     },
     stop() {
-      if (isPlaying) {
-        htmlElement.pause();
-        htmlElement.src = '';
-        isPlaying = false;
-      }
+      playGeneration++;
+      htmlElement.pause();
+      htmlElement.src = '';
+      isPlaying = false;
     },
     warmUp() {
-      if (!isPlaying) {
-        htmlElement.src = blobUrl || initialSrc;
-        htmlElement.play().then(() => {
+      if (isPlaying) return;
+      if (!blobUrl) {
+        preloadBlob();
+        return;
+      }
+
+      const gen = playGeneration;
+      htmlElement.src = blobUrl;
+      htmlElement.play().then(() => {
+        if (gen === playGeneration && !isPlaying) {
           htmlElement.pause();
           htmlElement.currentTime = 0;
-        }).catch(() => {});
-      }
+        }
+      }).catch(() => {});
     },
     preloadBlob,
   };
@@ -130,12 +201,9 @@ function audioInstance(htmlElement) {
 const loadingNoiseInstance = audioInstance(loadingNoise);
 const errorNoiseInstance = audioInstance(errorNoise);
 
-// Eagerly preload sound blobs for returning users so they're available offline.
+// Eagerly preload sound blobs so loading/error feedback can start from memory.
 // fetch() doesn't need a user gesture — only playback does.
-if (hasRestoredStation) {
-  loadingNoiseInstance.preloadBlob();
-  errorNoiseInstance.preloadBlob();
-}
+preloadAudioBlobs();
 
 // Shared helper — registers all MediaSession action handlers.
 // Called from both updateMediaSession() (every state transition) and
@@ -205,10 +273,9 @@ function reassertPlaybackState() {
 loadingNoise.addEventListener('pause', reassertPlaybackState);
 errorNoise.addEventListener('pause', reassertPlaybackState);
 
-// Preload audio blobs on first user interaction (not at page load)
+// Preload audio blobs once per page. Re-called from user interactions as a retry
+// if the eager page-load preload failed.
 function preloadAudioBlobs() {
-  if (blobsPreloaded) return;
-  blobsPreloaded = true;
   loadingNoiseInstance.preloadBlob();
   errorNoiseInstance.preloadBlob();
 }
@@ -223,6 +290,29 @@ const showButton = (which) => {
 
 // core reference — set after createRadioCore(), used by updateMediaSession
 let core = null;
+
+let pendingServiceWorkerReload = false;
+let serviceWorkerReloaded = false;
+
+function reloadForServiceWorkerUpdate() {
+  if (serviceWorkerReloaded) return;
+  serviceWorkerReloaded = true;
+  pendingServiceWorkerReload = false;
+  window.location.reload();
+}
+
+function maybeReloadForPendingServiceWorkerUpdate(newState) {
+  if (pendingServiceWorkerReload && newState === 'idle') reloadForServiceWorkerUpdate();
+}
+
+function requestServiceWorkerReload() {
+  if (serviceWorkerReloaded) return;
+  if (core?.getState() === 'idle') {
+    reloadForServiceWorkerUpdate();
+    return;
+  }
+  pendingServiceWorkerReload = true;
+}
 
 const updateMediaSession = (newState) => {
   const title = radioSelect.options[radioSelect.selectedIndex].text;
@@ -261,6 +351,7 @@ const updateMediaSession = (newState) => {
   posterImage.querySelector('img').src = cloudinaryImageUrl(displayText, isLive);
   document.title = `${isLoading ? "⏳" : ''} ${hasError ? '❤️‍🩹' : ''} ${isLive ? '🔴' : ''} ${isIdle ? idleText : isLoading ? `${LABELS.loading} ${title}` : hasError ? LABELS.error : title}`;
   loadingMsg.innerText = isLoading ? `${LABELS.loading} ${title}` : '';
+  maybeReloadForPendingServiceWorkerUpdate(newState);
 };
 
 core = createRadioCore({
@@ -382,6 +473,8 @@ worker.onmessage = () => {};
 
 // Service Worker
 if ('serviceWorker' in navigator) {
+  let hasServiceWorkerController = Boolean(navigator.serviceWorker.controller);
+
   (async () => {
     try {
       const registrations = await navigator.serviceWorker.getRegistrations();
@@ -399,7 +492,13 @@ if ('serviceWorker' in navigator) {
     }
   })();
 
-  navigator.serviceWorker.addEventListener('controllerchange', () => window.location.reload());
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hasServiceWorkerController) {
+      hasServiceWorkerController = true;
+      return;
+    }
+    requestServiceWorkerReload();
+  });
 }
 
 // Theme color

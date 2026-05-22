@@ -80,13 +80,20 @@ index.html          ← UI (butoane, poster, selector)
 
 ## Teste
 
-### Unit tests — `radioCore.test.js` (33 teste, Vitest)
+### Unit tests — `radioCore.test.js` (49 teste, Vitest)
 
 Testează logica pură din `radioCore.js` **fără browser**. Toate dependențele (player, timere, DOM) sunt mock-uite manual prin `makeDeps()`.
 
 ```bash
 npm test          # vitest run
+npm run test:coverage  # vitest run --coverage
 ```
+
+Coverage-ul Vitest este configurat pentru modulele unit-testabile (`radioCore.js` și `stateMachine.js`). Codul DOM/browser glue din `script.js` este acoperit prin Playwright e2e, nu prin raportul de unit coverage.
+
+După `npm run test:coverage`, raportul HTML este generat în `coverage/index.html`, iar sumarul apare direct în terminal.
+
+Notă: dacă sumarul text afișează numere de linii lângă un fișier care are `100% Lines`, acelea sunt linii unde există branches neacoperite, nu linii neexecutate. Raportul HTML le marchează cu `branch not covered`.
 
 | Grup | Ce testează | Exemple |
 |---|---|---|
@@ -103,7 +110,7 @@ npm test          # vitest run
 | **togglePlayPause** | Un singur buton play/pause | Din `idle` pornește, din `playing` pauzează |
 | **restart after long pause** | Pauză > 2s → restart stream | Stream-urile radio nu bufferează, re-play după pauză lungă |
 
-### E2E tests — `e2e/radio.spec.js` (17 teste, Playwright)
+### E2E tests — `e2e/radio.spec.js` (23 teste, Playwright)
 
 Testează aplicația completă în Chromium real. Stream-urile radio sunt interceptate și servite local (`test-tone.mp3`).
 
@@ -161,9 +168,24 @@ npm run test:e2e  # playwright test
 
 ## Dev
 
+Node.js 20.19+ is required because the current Vitest/Vite toolchain depends on a Vite version that does not run correctly on older Node 18 builds. Use the committed `.nvmrc` before installing dependencies or running tests:
+
+```bash
+nvm install
+nvm use
+node --version  # should be v20.19.0 or newer
+```
+
 ```bash
 npm run dev       # live-server + tailwind watch
 npm test          # unit tests (vitest)
+npm run test:coverage  # unit coverage + raport HTML in coverage/index.html
 npm run test:e2e  # e2e tests (playwright, pornește singur serverul)
 npm run build     # build → public/
 ```
+
+## CI
+
+GitHub Actions rulează pe pull request-uri și pe push în `main`. Workflow-ul verifică unit tests cu coverage, build-ul și testele e2e în Chromium.
+
+La final, job-ul scrie un summary cu statusul fiecărui pas: câte unit/e2e tests au trecut, coverage-ul Vitest și detalii despre testele care au picat. Pe pull request-uri, același summary este postat și actualizat ca un comentariu sticky, similar cu mesajul Vercel. Fișierele generate pentru summary (`reports/`) și raportul local de coverage (`coverage/`) sunt artefacte temporare și sunt ignorate de git.

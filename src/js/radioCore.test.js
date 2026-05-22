@@ -222,6 +222,18 @@ describe('playRadio — happy path', () => {
 // =============================================
 
 describe('playRadio — error with retry', () => {
+  it('goes straight to error when starting offline', () => {
+    const { deps, calls } = makeDeps({ isOnline: () => false });
+    const core = createRadioCore(deps);
+
+    core.playRadio(1);
+
+    expect(core.getState()).toBe('error');
+    expect(calls.playerPlay).toEqual([]);
+    expect(calls.playerSetSrc.at(-1)).toBe('');
+    expect([...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS)).toBe(true);
+  });
+
   it('retries then errors after MAX_RETRIES', async () => {
     const { deps, calls } = makeDeps();
     const playError = new Error('Network error');
@@ -294,6 +306,39 @@ describe('pause and resume', () => {
 
     core.onPlayerPlay();
     expect(core.getState()).toBe('loading'); // unchanged
+  });
+});
+
+// =============================================
+// NATIVE PLAYER ERRORS
+// =============================================
+
+describe('native player errors', () => {
+  it('retries when the stream errors while playing', async () => {
+    const { deps } = makeDeps();
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    expect(core.getState()).toBe('playing');
+
+    core.onPlayerError();
+
+    expect(core.getState()).toBe('retrying');
+  });
+
+  it('retries when the stream errors while paused', async () => {
+    const { deps } = makeDeps();
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    core.onPlayerPause();
+    expect(core.getState()).toBe('paused');
+
+    core.onPlayerError();
+
+    expect(core.getState()).toBe('retrying');
   });
 });
 
@@ -606,6 +651,115 @@ describe('togglePlayPause', () => {
   });
 });
 
+describe('resume failures', () => {
+  it('resumeRadio keeps paused when playerPlay rejects', async () => {
+    const { deps, calls } = makeDeps();
+    const core = createRadioCore(deps);
+    let rejectResume;
+
+    core.playRadio(0);
+    await flushPromises();
+    core.onPlayerPause();
+    expect(core.getState()).toBe('paused');
+
+    const pauseCallsBeforeResume = calls.playerPause.length;
+    deps._setPlayerPlayResult(new Promise((_, reject) => { rejectResume = reject; }));
+    const resume = core.resumeRadio();
+    rejectResume(new Error('resume blocked'));
+    await resume;
+
+    expect(core.getState()).toBe('paused');
+    expect(calls.paused).toBe(true);
+    expect(calls.playerPause.length).toBe(pauseCallsBeforeResume + 1);
+    expect(calls.showButton.at(-1)).toBe('play');
+  });
+
+  it('togglePlayPause keeps paused when resume rejects', async () => {
+    const { deps, calls } = makeDeps();
+    const core = createRadioCore(deps);
+    let rejectResume;
+
+    core.playRadio(0);
+    await flushPromises();
+    core.onPlayerPause();
+    calls.paused = true;
+    expect(core.getState()).toBe('paused');
+
+    const pauseCallsBeforeResume = calls.playerPause.length;
+    deps._setPlayerPlayResult(new Promise((_, reject) => { rejectResume = reject; }));
+    const resume = core.togglePlayPause();
+    rejectResume(new Error('resume blocked'));
+    await resume;
+
+    expect(core.getState()).toBe('paused');
+    expect(calls.paused).toBe(true);
+    expect(calls.playerPause.length).toBe(pauseCallsBeforeResume + 1);
+  });
+
+  it('onPlayButtonClick keeps paused when resume rejects', async () => {
+    const { deps, calls } = makeDeps();
+    const core = createRadioCore(deps);
+    let rejectResume;
+
+    core.playRadio(0);
+    await flushPromises();
+    core.onPlayerPause();
+    expect(core.getState()).toBe('paused');
+
+    const pauseCallsBeforeResume = calls.playerPause.length;
+    deps._setPlayerPlayResult(new Promise((_, reject) => { rejectResume = reject; }));
+    const resume = core.onPlayButtonClick();
+    rejectResume(new Error('resume blocked'));
+    await resume;
+
+    expect(core.getState()).toBe('paused');
+    expect(calls.paused).toBe(true);
+    expect(calls.playerPause.length).toBe(pauseCallsBeforeResume + 1);
+  });
+
+  it('resumeRadio handles playerPlay without a promise', async () => {
+    const { deps } = makeDeps();
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    core.onPlayerPause();
+    expect(core.getState()).toBe('paused');
+
+    deps._setPlayerPlayResult(undefined);
+    await core.resumeRadio();
+
+    expect(core.getState()).toBe('paused');
+  });
+
+  it('resumeRadio keeps paused when playerPlay throws synchronously', async () => {
+    let callsRef;
+    let playCalls = 0;
+    const { deps, calls } = makeDeps({
+      playerPlay: () => {
+        callsRef.playerPlay.push('play');
+        callsRef.paused = false;
+        if (playCalls++ === 0) return Promise.resolve();
+        throw new Error('resume blocked');
+      },
+    });
+    callsRef = calls;
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    core.onPlayerPause();
+    expect(core.getState()).toBe('paused');
+
+    const pauseCallsBeforeResume = calls.playerPause.length;
+    await core.resumeRadio();
+
+    expect(core.getState()).toBe('paused');
+    expect(calls.paused).toBe(true);
+    expect(calls.playerPause.length).toBe(pauseCallsBeforeResume + 1);
+  });
+});
+
 // =============================================
 // RESTART AFTER LONG PAUSE
 // =============================================
@@ -745,6 +899,28 @@ describe('max recovery attempts', () => {
 
     expect(core.getState()).toBe('playing');
     expect(core._getRecoveryCount()).toBe(0);
+  });
+
+  it('returns to error when silent recovery times out', async () => {
+    const { deps, calls } = makeDeps();
+    deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    fireTimer(deps, 3000);
+    await flushPromises();
+    expect(core.getState()).toBe('error');
+
+    deps._setPlayerPlayResult(new Promise(() => {}));
+    fireTimer(deps, RECOVERY_DELAY_MS);
+    expect(core.getState()).toBe('recovering');
+
+    fireTimer(deps, 6000);
+
+    expect(core.getState()).toBe('error');
+    expect(calls.playerSetSrc.at(-1)).toBe('');
+    expect([...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS)).toBe(true);
   });
 
   it('offline recovery reschedules without attempting stream', async () => {
