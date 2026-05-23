@@ -545,7 +545,7 @@ function focusOption(index) {
   selectorFocusedIndex = (index + optionCount) % optionCount;
   syncSelectorSelection();
   selectorOptionButtons[selectorFocusedIndex].focus();
-  selectorOptionButtons[selectorFocusedIndex].scrollIntoView({ behavior: "smooth", block: "nearest" });
+  selectorOptionButtons[selectorFocusedIndex].scrollIntoView({ behavior: "auto", block: "nearest" });
 }
 
 function openSelector({ focusSelected = false } = {}) {
@@ -554,14 +554,17 @@ function openSelector({ focusSelected = false } = {}) {
   new_selector_open_button.setAttribute('aria-expanded', 'true');
   syncSelectorSelection();
   if (focusSelected) focusOption(selectorFocusedIndex);
-  else selectorOptionButtons[selectorFocusedIndex]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  else selectorOptionButtons[selectorFocusedIndex]?.scrollIntoView({ behavior: "auto", block: "nearest" });
 }
 
-function closeSelector({ returnFocus = false } = {}) {
+function closeSelector({ returnFocus = false, blurHiddenFocus = false } = {}) {
+  const activeElement = document.activeElement;
+  const shouldBlurHiddenFocus = blurHiddenFocus && activeElement && document.getElementById('new_selector__parent').contains(activeElement);
   new_selector_content.classList.add('hidden');
   new_selector_open_button.setAttribute('aria-expanded', 'false');
   syncSelectorSelection();
   if (returnFocus) new_selector_open_button.focus();
+  else if (shouldBlurHiddenFocus) activeElement.blur();
 }
 
 function toggleSelector() {
@@ -597,7 +600,7 @@ radios.forEach((radio, index) => {
 });
 syncSelectorSelection();
 
-[new_selector_open_button, posterImage].map(el => el.addEventListener('click', toggleSelector));
+[new_selector_open_button, posterImage].forEach(el => el.addEventListener('click', toggleSelector));
 
 new_selector_open_button.addEventListener('keydown', (e) => {
   if (!['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
@@ -641,6 +644,6 @@ document.addEventListener('keydown', (e) => {
 
 document.addEventListener('click', (e) => {
   if (!new_selector_content.contains(e.target) && !new_selector_open_button.contains(e.target) && !posterImage.contains(e.target)) {
-    closeSelector();
+    closeSelector({ blurHiddenFocus: true });
   }
 });
