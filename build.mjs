@@ -73,10 +73,11 @@ async function minifyJS() {
 async function copyAssets() {
     await fs.copy(path.join(srcFolder, "images"), path.join(distFolder, "images"));
     await fs.copy(path.join(srcFolder, "sounds"), path.join(distFolder, "sounds"));
+    await fs.copy(path.join(srcFolder, "downloads"), path.join(distFolder, "downloads"));
     await fs.copy(path.join(srcFolder, "manifest.json"), path.join(distFolder, "manifest.json"));
     await fs.copy(path.join(srcFolder, "sw.js"), path.join(distFolder, "sw.js"));
     await fs.copy(path.join(srcFolder, "css"), path.join(distFolder, "css"));
-    console.log("✅ Copied images, sounds, sw.js, and manifest.json");
+    console.log("✅ Copied images, sounds, downloads, sw.js, and manifest.json");
 }
 
 async function buildCSS() {
