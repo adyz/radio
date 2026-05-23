@@ -190,6 +190,15 @@ test.describe('Radio Player E2E', () => {
     await expect(page.locator('#new_selector__content')).toBeHidden();
   });
 
+  test('keyboard users can open the selector from the poster', async ({ page }) => {
+    await page.goto('/');
+
+    await page.getByLabel('Deschide selectorul de posturi').focus();
+    await page.keyboard.press('Enter');
+
+    await expect(page.locator('#new_selector__content')).toBeVisible();
+  });
+
   test('keyboard users can select a station and dismiss without changing selection', async ({ page }) => {
     await mockStreams(page);
     await page.goto('/');
