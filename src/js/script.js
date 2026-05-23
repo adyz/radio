@@ -287,21 +287,15 @@ function isPlaybackControl(element) {
   return element === playButton || element === pauseButton || element === stopButton;
 }
 
-let shouldFocusPlaybackControl = false;
-
 const showButton = (which) => {
   const shouldPreserveFocus = isPlaybackControl(document.activeElement);
-  const shouldMoveFocus = shouldPreserveFocus || shouldFocusPlaybackControl;
   const nextButton = which === 'play' ? playButton : which === 'pause' ? pauseButton : stopButton;
 
   playButton.classList.toggle('hidden', which !== 'play');
   pauseButton.classList.toggle('hidden', which !== 'pause');
   stopButton.classList.toggle('hidden', which !== 'stop');
 
-  if (shouldMoveFocus) {
-    nextButton.focus();
-    shouldFocusPlaybackControl = false;
-  }
+  if (shouldPreserveFocus) nextButton.focus();
 };
 
 // core reference — set after createRadioCore(), used by updateMediaSession
@@ -607,11 +601,10 @@ function selectOption(index) {
   preloadAudioBlobs();
   loadingNoiseInstance.warmUp();
   errorNoiseInstance.warmUp();
-  shouldFocusPlaybackControl = true;
   core.playRadio(index);
   selectorFocusedIndex = index;
   syncSelectorSelection();
-  closeSelector();
+  closeSelector({ returnFocus: true });
 }
 
 radios.forEach((radio, index) => {

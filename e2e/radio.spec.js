@@ -239,7 +239,7 @@ test.describe('Radio Player E2E', () => {
 
     await expect(poster).toHaveAttribute('src', /Europa/, { timeout: 8000 });
     await expect(posterButton).toHaveAttribute('aria-expanded', 'false');
-    await expect(page.getByLabel('Pauză')).toBeFocused({ timeout: 8000 });
+    await expect(posterButton).toBeFocused();
   });
 
   test('keyboard users can reload the page from the logo', async ({ page }) => {
@@ -269,7 +269,7 @@ test.describe('Radio Player E2E', () => {
     await page.keyboard.press('Enter');
 
     await expect(poster).toHaveAttribute('src', /Europa/, { timeout: 8000 });
-    await expect(page.getByLabel('Pauză')).toBeFocused({ timeout: 8000 });
+    await expect(stationPicker).toBeFocused();
 
     await stationPicker.focus();
     await page.keyboard.press('Enter');
