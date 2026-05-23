@@ -115,6 +115,37 @@ test.describe('Radio Player E2E', () => {
     await expect(page.locator('#stopButton')).toBeHidden();
   });
 
+  test('keyboard focus stays in the center playback controls', async ({ page }) => {
+    await mockStreams(page);
+    await page.goto('/');
+
+    await page.getByLabel('Redare').focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByLabel('Pauză')).toBeFocused({ timeout: 8000 });
+
+    await page.keyboard.press('Enter');
+    await expect(page.getByLabel('Redare')).toBeFocused();
+  });
+
+  test('keyboard focus returns to play after stopping from the center control', async ({ page }) => {
+    await page.route(STREAM_URL_RE, async (route) => {
+      await new Promise(r => setTimeout(r, 2000));
+      await route.fulfill({
+        status: 200,
+        contentType: 'audio/mpeg',
+        path: 'src/sounds/test-tone.mp3',
+      });
+    });
+    await page.goto('/');
+
+    await page.getByLabel('Redare').focus();
+    await page.keyboard.press('Enter');
+    await expect(page.getByLabel('Oprește')).toBeFocused({ timeout: 3000 });
+
+    await page.keyboard.press('Enter');
+    await expect(page.getByLabel('Redare')).toBeFocused();
+  });
+
   // --- Station switching ---
 
   test('clicking next changes station', async ({ page }) => {
@@ -178,6 +209,59 @@ test.describe('Radio Player E2E', () => {
     // Click on body (outside selector)
     await page.locator('body').click({ position: { x: 10, y: 10 } });
     await expect(page.locator('#new_selector__content')).toBeHidden();
+  });
+
+  test('Escape closes the selector after opening it with the mouse', async ({ page }) => {
+    await page.goto('/');
+
+    await page.getByLabel('Alege postul de radio').click();
+    await expect(page.locator('#new_selector__content')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#new_selector__content')).toBeHidden();
+  });
+
+  test('keyboard users can open and navigate the selector from the poster', async ({ page }) => {
+    await mockStreams(page);
+    await page.goto('/');
+
+    const poster = page.locator('#posterImage img');
+    const posterButton = page.getByLabel('Deschide selectorul de posturi');
+
+    await expect(posterButton).toHaveAttribute('aria-expanded', 'false');
+    await posterButton.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#new_selector__content')).toBeVisible();
+    await expect(posterButton).toHaveAttribute('aria-expanded', 'true');
+
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+
+    await expect(poster).toHaveAttribute('src', /Europa/, { timeout: 8000 });
+    await expect(posterButton).toHaveAttribute('aria-expanded', 'false');
+    await expect(posterButton).toBeFocused();
+  });
+
+  test('keyboard users can select a station and dismiss without changing selection', async ({ page }) => {
+    await mockStreams(page);
+    await page.goto('/');
+
+    const stationPicker = page.getByLabel('Alege postul de radio');
+    const poster = page.locator('#posterImage img');
+
+    await stationPicker.focus();
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+
+    await expect(poster).toHaveAttribute('src', /Europa/, { timeout: 8000 });
+
+    await stationPicker.focus();
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Escape');
+
+    await expect(poster).toHaveAttribute('src', /Europa/);
   });
 
   // --- Error state ---

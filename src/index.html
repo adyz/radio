@@ -94,15 +94,21 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
 
         <button
           aria-label="Alege postul de radio"
+          aria-haspopup="listbox"
+          aria-expanded="false"
+          aria-controls="new_selector__content"
           class="position absolute top-22 right-[50%] -mr-19 text-SuperLighterBrown bg-StaticWhite border-[.5px] boder-Broder py-2 rounded-lg scale-75"
-        id="new_selector__button">
+          id="new_selector__button"
+          type="button">
         <svg fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" shape-rendering="geometricPrecision" viewBox="0 0 24 24" height="24" width="24" style="color: currentcolor;"><path d="M17 8.517L12 3 7 8.517m0 6.963l5 5.517 5-5.517"></path></svg>
       </button>
 
         <!-- this will be cloned inside -->
-        <button id="new_selector__button_example" class="hidden w-full text-Brown py-4 text-md hover:bg-Red/20 active:bg-Red/20 border-0 border-b border-Border/50">Example</button>
+        <button id="new_selector__button_example" type="button" class="hidden w-full text-Brown py-4 text-md hover:bg-Red/20 active:bg-Red/20 focus-visible:bg-Red/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-Red border-0 border-b border-Border/50">Example</button>
 
         <div id="new_selector__content"
+          role="listbox"
+          aria-label="Posturi de radio"
           class="hidden flex overflow-auto flex-col absolute top-0 left-0 w-full h-82 shadow-2xl border border-Border bg-White overscroll-contain rounded-3xl [scrollbar-width:thin]">
           
           
@@ -111,15 +117,20 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
       </div>
 
       <!-- Poster Image -->
-      <div id="posterImage"
-        class="mx-auto rounded-3xl overflow-hidden w-[128px] h-[128px] bg-Red border border-Border relative z-10 mt-10">
+      <button id="posterImage"
+        type="button"
+        aria-label="Deschide selectorul de posturi"
+        aria-haspopup="listbox"
+        aria-expanded="false"
+        aria-controls="new_selector__content"
+        class="block appearance-none mx-auto rounded-3xl overflow-hidden w-[128px] h-[128px] bg-Red border border-Border relative z-10 mt-10 p-0">
 
 
         <img
           fetchpriority="high"
           src="https://res.cloudinary.com/adrianf/image/upload/c_scale,h_480,w_480/w_400,g_south_west,x_50,y_70,c_fit,l_text:arial_90:Coji%20Radio%20Player/nndti4oybhdzggf8epvh"
           alt="Coji Radio Player" class="w-full h-full object-cover">
-      </div>
+      </button>
 
 
       <!-- PlayerControls -->

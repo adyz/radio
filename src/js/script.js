@@ -282,10 +282,19 @@ function preloadAudioBlobs() {
 
 // --- UI helpers ---
 
+function isPlaybackControl(element) {
+  return element === playButton || element === pauseButton || element === stopButton;
+}
+
 const showButton = (which) => {
+  const shouldPreserveFocus = isPlaybackControl(document.activeElement);
+  const nextButton = which === 'play' ? playButton : which === 'pause' ? pauseButton : stopButton;
+
   playButton.classList.toggle('hidden', which !== 'play');
   pauseButton.classList.toggle('hidden', which !== 'pause');
   stopButton.classList.toggle('hidden', which !== 'stop');
+
+  if (shouldPreserveFocus) nextButton.focus();
 };
 
 // core reference — set after createRadioCore(), used by updateMediaSession
@@ -522,44 +531,140 @@ const new_selector_content = document.getElementById('new_selector__content');
 const new_selector_button_example = document.getElementById('new_selector__button_example');
 
 const radios = radioSelect.querySelectorAll('option');
+const selectorOptionButtons = [];
+let selectorFocusedIndex = radioSelect.selectedIndex;
+let selectorReturnFocusElement = new_selector_open_button;
+
+function isSelectorOpen() {
+  return !new_selector_content.classList.contains('hidden');
+}
+
+function syncSelectorSelection() {
+  selectorOptionButtons.forEach((button, index) => {
+    const isSelected = radioSelect.selectedIndex === index;
+    const isFocused = selectorFocusedIndex === index;
+    button.classList.toggle('bg-Red', isSelected);
+    button.setAttribute('aria-selected', String(isSelected));
+    button.tabIndex = isSelectorOpen() && isFocused ? 0 : -1;
+  });
+}
+
+function focusOption(index) {
+  if (!selectorOptionButtons.length) return;
+  const optionCount = selectorOptionButtons.length;
+  selectorFocusedIndex = (index + optionCount) % optionCount;
+  syncSelectorSelection();
+  selectorOptionButtons[selectorFocusedIndex].focus();
+  selectorOptionButtons[selectorFocusedIndex].scrollIntoView({ behavior: "auto", block: "nearest" });
+}
+
+function setSelectorExpanded(isExpanded) {
+  [new_selector_open_button, posterImage].forEach(el => {
+    el.setAttribute('aria-expanded', String(isExpanded));
+  });
+}
+
+function openSelector({ focusSelected = false, trigger = document.activeElement } = {}) {
+  if (trigger === new_selector_open_button || trigger === posterImage) {
+    selectorReturnFocusElement = trigger;
+  }
+  selectorFocusedIndex = radioSelect.selectedIndex;
+  new_selector_content.classList.remove('hidden');
+  setSelectorExpanded(true);
+  syncSelectorSelection();
+  if (focusSelected) focusOption(selectorFocusedIndex);
+  else selectorOptionButtons[selectorFocusedIndex]?.scrollIntoView({ behavior: "auto", block: "nearest" });
+}
+
+function closeSelector({ returnFocus = false, blurHiddenFocus = false } = {}) {
+  const activeElement = document.activeElement;
+  const shouldBlurHiddenFocus = blurHiddenFocus && activeElement && document.getElementById('new_selector__parent').contains(activeElement);
+  new_selector_content.classList.add('hidden');
+  setSelectorExpanded(false);
+  syncSelectorSelection();
+  if (returnFocus) selectorReturnFocusElement.focus();
+  else if (shouldBlurHiddenFocus) activeElement.blur();
+}
+
+function toggleSelector(trigger) {
+  if (isSelectorOpen()) closeSelector();
+  else openSelector({ trigger });
+}
+
+function selectOption(index) {
+  preloadAudioBlobs();
+  loadingNoiseInstance.warmUp();
+  errorNoiseInstance.warmUp();
+  core.playRadio(index);
+  selectorFocusedIndex = index;
+  syncSelectorSelection();
+  closeSelector({ returnFocus: true });
+}
+
 radios.forEach((radio, index) => {
   const new_button = new_selector_button_example.cloneNode(true);
-  new_button.id = '';
+  new_button.id = `new_selector__option_${index}`;
+  new_button.setAttribute('role', 'option');
+  new_button.setAttribute('aria-selected', 'false');
+  new_button.tabIndex = -1;
   new_button.classList.remove('hidden');
   new_button.innerText = radio.text;
 
   new_button.addEventListener('click', () => {
-    preloadAudioBlobs();
-    loadingNoiseInstance.warmUp();
-    errorNoiseInstance.warmUp();
-    core.playRadio(index);
-    new_selector_content.classList.add('hidden');
+    selectOption(index);
   });
 
   new_selector_content.appendChild(new_button);
+  selectorOptionButtons.push(new_button);
+});
+syncSelectorSelection();
 
-  if (radioSelect.selectedIndex === index) {
-    new_button.classList.add('bg-Red');
-    const previous_selected = new_selector_content.querySelector('.bg-Red');
-    if (previous_selected) previous_selected.classList.remove('bg-Red');
+[new_selector_open_button, posterImage].forEach(el => el.addEventListener('click', () => toggleSelector(el)));
+
+function handleSelectorTriggerKeydown(e) {
+  if (!['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
+  e.preventDefault();
+  openSelector({ focusSelected: true, trigger: e.currentTarget });
+  if (e.key === 'ArrowDown') focusOption(selectorFocusedIndex + 1);
+  if (e.key === 'ArrowUp') focusOption(selectorFocusedIndex - 1);
+}
+
+[new_selector_open_button, posterImage].forEach(el => el.addEventListener('keydown', handleSelectorTriggerKeydown));
+
+new_selector_content.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    focusOption(selectorFocusedIndex + 1);
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    focusOption(selectorFocusedIndex - 1);
+  } else if (e.key === 'Home') {
+    e.preventDefault();
+    focusOption(0);
+  } else if (e.key === 'End') {
+    e.preventDefault();
+    focusOption(selectorOptionButtons.length - 1);
+  } else if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    selectOption(selectorFocusedIndex);
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    closeSelector({ returnFocus: true });
   }
 });
 
-[new_selector_open_button, posterImage].map(el => el.addEventListener('click', () => {
-  new_selector_content.classList.toggle('hidden');
-  const new_selector_buttons = new_selector_content.querySelectorAll('button');
-  new_selector_buttons.forEach((button, index) => {
-    if (radioSelect.selectedIndex === index) {
-      button.classList.add('bg-Red');
-      button.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    } else {
-      button.classList.remove('bg-Red');
-    }
-  });
-}));
+document.getElementById('new_selector__parent').addEventListener('focusout', (e) => {
+  if (!e.currentTarget.contains(e.relatedTarget)) closeSelector();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || !isSelectorOpen()) return;
+  e.preventDefault();
+  closeSelector({ returnFocus: true });
+});
 
 document.addEventListener('click', (e) => {
   if (!new_selector_content.contains(e.target) && !new_selector_open_button.contains(e.target) && !posterImage.contains(e.target)) {
-    new_selector_content.classList.add('hidden');
+    closeSelector({ blurHiddenFocus: true });
   }
 });
