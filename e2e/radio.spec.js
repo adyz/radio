@@ -226,7 +226,7 @@ test.describe('Radio Player E2E', () => {
     await page.goto('/');
 
     const poster = page.locator('#posterImage img');
-    const posterButton = page.getByLabel('Deschide selectorul de posturi');
+    const posterButton = page.getByRole('button', { name: 'Deschide selectorul de posturi', exact: true });
 
     await expect(posterButton).toHaveAttribute('aria-expanded', 'false');
     await posterButton.focus();
@@ -239,7 +239,21 @@ test.describe('Radio Player E2E', () => {
 
     await expect(poster).toHaveAttribute('src', /Europa/, { timeout: 8000 });
     await expect(posterButton).toHaveAttribute('aria-expanded', 'false');
-    await expect(posterButton).toBeFocused();
+    await expect(page.getByLabel('Pauză')).toBeFocused({ timeout: 8000 });
+  });
+
+  test('keyboard users can reload the page from the logo', async ({ page }) => {
+    await page.goto('/');
+
+    const logoButton = page.getByLabel('Reîncarcă pagina');
+    await logoButton.focus();
+
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'domcontentloaded' }),
+      page.keyboard.press('Enter'),
+    ]);
+
+    await expect(page).toHaveURL(/\/$/);
   });
 
   test('keyboard users can select a station and dismiss without changing selection', async ({ page }) => {
@@ -255,6 +269,7 @@ test.describe('Radio Player E2E', () => {
     await page.keyboard.press('Enter');
 
     await expect(poster).toHaveAttribute('src', /Europa/, { timeout: 8000 });
+    await expect(page.getByLabel('Pauză')).toBeFocused({ timeout: 8000 });
 
     await stationPicker.focus();
     await page.keyboard.press('Enter');
@@ -262,6 +277,25 @@ test.describe('Radio Player E2E', () => {
     await page.keyboard.press('Escape');
 
     await expect(poster).toHaveAttribute('src', /Europa/);
+  });
+
+  test('ArrowLeft and ArrowRight close the open selector', async ({ page }) => {
+    await page.goto('/');
+
+    const stationPicker = page.getByLabel('Alege postul de radio');
+
+    await stationPicker.focus();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#new_selector__content')).toBeVisible();
+    await page.keyboard.press('ArrowRight');
+    await expect(page.locator('#new_selector__content')).toBeHidden();
+    await expect(stationPicker).toBeFocused();
+
+    await page.keyboard.press('Enter');
+    await expect(page.locator('#new_selector__content')).toBeVisible();
+    await page.keyboard.press('ArrowLeft');
+    await expect(page.locator('#new_selector__content')).toBeHidden();
+    await expect(stationPicker).toBeFocused();
   });
 
   // --- Error state ---
