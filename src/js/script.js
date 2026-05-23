@@ -602,13 +602,15 @@ syncSelectorSelection();
 
 [new_selector_open_button, posterImage].forEach(el => el.addEventListener('click', toggleSelector));
 
-new_selector_open_button.addEventListener('keydown', (e) => {
+function handleSelectorTriggerKeydown(e) {
   if (!['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
   e.preventDefault();
   openSelector({ focusSelected: true });
   if (e.key === 'ArrowDown') focusOption(selectorFocusedIndex + 1);
   if (e.key === 'ArrowUp') focusOption(selectorFocusedIndex - 1);
-});
+}
+
+[new_selector_open_button, posterImage].forEach(el => el.addEventListener('keydown', handleSelectorTriggerKeydown));
 
 new_selector_content.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowDown') {

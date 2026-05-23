@@ -190,13 +190,20 @@ test.describe('Radio Player E2E', () => {
     await expect(page.locator('#new_selector__content')).toBeHidden();
   });
 
-  test('keyboard users can open the selector from the poster', async ({ page }) => {
+  test('keyboard users can open and navigate the selector from the poster', async ({ page }) => {
+    await mockStreams(page);
     await page.goto('/');
+
+    const poster = page.locator('#posterImage img');
 
     await page.getByLabel('Deschide selectorul de posturi').focus();
     await page.keyboard.press('Enter');
-
     await expect(page.locator('#new_selector__content')).toBeVisible();
+
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+
+    await expect(poster).toHaveAttribute('src', /Europa/, { timeout: 8000 });
   });
 
   test('keyboard users can select a station and dismiss without changing selection', async ({ page }) => {
