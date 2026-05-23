@@ -557,11 +557,24 @@ function syncSelectorSelection() {
 
 function focusOption(index) {
   if (!selectorOptionButtons.length) return;
-  const optionCount = selectorOptionButtons.length;
-  selectorFocusedIndex = (index + optionCount) % optionCount;
+
+  const lastIndex = selectorOptionButtons.length - 1;
+  const nextIndex = Math.max(0, Math.min(index, lastIndex));
+
+  selectorFocusedIndex = nextIndex;
   syncSelectorSelection();
-  selectorOptionButtons[selectorFocusedIndex].focus();
-  selectorOptionButtons[selectorFocusedIndex].scrollIntoView({ behavior: "auto", block: "nearest" });
+
+  const button = selectorOptionButtons[selectorFocusedIndex];
+
+  button.focus({
+    preventScroll: true,
+  });
+
+  button.scrollIntoView({
+    behavior: "auto",
+    block: "nearest",
+    inline: "nearest",
+  });
 }
 
 function setSelectorExpanded(isExpanded) {
@@ -578,8 +591,15 @@ function openSelector({ focusSelected = false, trigger = document.activeElement 
   new_selector_content.classList.remove('hidden');
   setSelectorExpanded(true);
   syncSelectorSelection();
-  if (focusSelected) focusOption(selectorFocusedIndex);
-  else selectorOptionButtons[selectorFocusedIndex]?.scrollIntoView({ behavior: "auto", block: "nearest" });
+  if (focusSelected) {
+    focusOption(selectorFocusedIndex);
+  } else {
+    selectorOptionButtons[selectorFocusedIndex]?.scrollIntoView({
+    behavior: "auto",
+    block: "nearest",
+    inline: "nearest",
+  });
+  }
 }
 
 function closeSelector({ returnFocus = false, blurHiddenFocus = false } = {}) {
