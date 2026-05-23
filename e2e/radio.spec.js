@@ -180,6 +180,38 @@ test.describe('Radio Player E2E', () => {
     await expect(page.locator('#new_selector__content')).toBeHidden();
   });
 
+  test('Escape closes the selector after opening it with the mouse', async ({ page }) => {
+    await page.goto('/');
+
+    await page.getByLabel('Alege postul de radio').click();
+    await expect(page.locator('#new_selector__content')).toBeVisible();
+
+    await page.keyboard.press('Escape');
+    await expect(page.locator('#new_selector__content')).toBeHidden();
+  });
+
+  test('keyboard users can select a station and dismiss without changing selection', async ({ page }) => {
+    await mockStreams(page);
+    await page.goto('/');
+
+    const stationPicker = page.getByLabel('Alege postul de radio');
+    const poster = page.locator('#posterImage img');
+
+    await stationPicker.focus();
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+
+    await expect(poster).toHaveAttribute('src', /Europa/, { timeout: 8000 });
+
+    await stationPicker.focus();
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Escape');
+
+    await expect(poster).toHaveAttribute('src', /Europa/);
+  });
+
   // --- Error state ---
 
   test('shows error state when stream fails', async ({ page }) => {
