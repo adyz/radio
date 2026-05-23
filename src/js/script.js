@@ -21,6 +21,7 @@ const pauseButton = document.getElementById('pauseButton');
 const stopButton = document.getElementById('stopButton');
 const nextButton = document.getElementById('nextButton');
 
+const logoButton = document.getElementById('logoButton');
 const posterImage = document.getElementById('posterImage');
 
 // --- Cloudinary ---
@@ -286,15 +287,21 @@ function isPlaybackControl(element) {
   return element === playButton || element === pauseButton || element === stopButton;
 }
 
+let shouldFocusPlaybackControl = false;
+
 const showButton = (which) => {
   const shouldPreserveFocus = isPlaybackControl(document.activeElement);
+  const shouldMoveFocus = shouldPreserveFocus || shouldFocusPlaybackControl;
   const nextButton = which === 'play' ? playButton : which === 'pause' ? pauseButton : stopButton;
 
   playButton.classList.toggle('hidden', which !== 'play');
   pauseButton.classList.toggle('hidden', which !== 'pause');
   stopButton.classList.toggle('hidden', which !== 'stop');
 
-  if (shouldPreserveFocus) nextButton.focus();
+  if (shouldMoveFocus) {
+    nextButton.focus();
+    shouldFocusPlaybackControl = false;
+  }
 };
 
 // core reference — set after createRadioCore(), used by updateMediaSession
@@ -534,6 +541,11 @@ const radios = radioSelect.querySelectorAll('option');
 const selectorOptionButtons = [];
 let selectorFocusedIndex = radioSelect.selectedIndex;
 let selectorReturnFocusElement = new_selector_open_button;
+const selectorTriggerButtons = [new_selector_open_button, posterImage];
+
+logoButton.addEventListener('click', () => {
+  window.location.reload();
+});
 
 function isSelectorOpen() {
   return !new_selector_content.classList.contains('hidden');
@@ -559,13 +571,13 @@ function focusOption(index) {
 }
 
 function setSelectorExpanded(isExpanded) {
-  [new_selector_open_button, posterImage].forEach(el => {
+  selectorTriggerButtons.forEach(el => {
     el.setAttribute('aria-expanded', String(isExpanded));
   });
 }
 
 function openSelector({ focusSelected = false, trigger = document.activeElement } = {}) {
-  if (trigger === new_selector_open_button || trigger === posterImage) {
+  if (selectorTriggerButtons.includes(trigger)) {
     selectorReturnFocusElement = trigger;
   }
   selectorFocusedIndex = radioSelect.selectedIndex;
@@ -595,10 +607,11 @@ function selectOption(index) {
   preloadAudioBlobs();
   loadingNoiseInstance.warmUp();
   errorNoiseInstance.warmUp();
+  shouldFocusPlaybackControl = true;
   core.playRadio(index);
   selectorFocusedIndex = index;
   syncSelectorSelection();
-  closeSelector({ returnFocus: true });
+  closeSelector();
 }
 
 radios.forEach((radio, index) => {
@@ -619,17 +632,15 @@ radios.forEach((radio, index) => {
 });
 syncSelectorSelection();
 
-[new_selector_open_button, posterImage].forEach(el => el.addEventListener('click', () => toggleSelector(el)));
+selectorTriggerButtons.forEach(el => el.addEventListener('click', () => toggleSelector(el)));
 
 function handleSelectorTriggerKeydown(e) {
-  if (!['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
+  if (!['Enter', ' '].includes(e.key)) return;
   e.preventDefault();
   openSelector({ focusSelected: true, trigger: e.currentTarget });
-  if (e.key === 'ArrowDown') focusOption(selectorFocusedIndex + 1);
-  if (e.key === 'ArrowUp') focusOption(selectorFocusedIndex - 1);
 }
 
-[new_selector_open_button, posterImage].forEach(el => el.addEventListener('keydown', handleSelectorTriggerKeydown));
+selectorTriggerButtons.forEach(el => el.addEventListener('keydown', handleSelectorTriggerKeydown));
 
 new_selector_content.addEventListener('keydown', (e) => {
   if (e.key === 'ArrowDown') {
@@ -647,6 +658,9 @@ new_selector_content.addEventListener('keydown', (e) => {
   } else if (e.key === 'Enter' || e.key === ' ') {
     e.preventDefault();
     selectOption(selectorFocusedIndex);
+  } else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault();
+    closeSelector({ returnFocus: true });
   } else if (e.key === 'Escape') {
     e.preventDefault();
     closeSelector({ returnFocus: true });
@@ -664,7 +678,7 @@ document.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('click', (e) => {
-  if (!new_selector_content.contains(e.target) && !new_selector_open_button.contains(e.target) && !posterImage.contains(e.target)) {
+  if (!new_selector_content.contains(e.target) && !selectorTriggerButtons.some(el => el.contains(e.target))) {
     closeSelector({ blurHiddenFocus: true });
   }
 });
