@@ -595,10 +595,10 @@ function openSelector({ focusSelected = false, trigger = document.activeElement 
     focusOption(selectorFocusedIndex);
   } else {
     selectorOptionButtons[selectorFocusedIndex]?.scrollIntoView({
-    behavior: "auto",
-    block: "nearest",
-    inline: "nearest",
-  });
+      behavior: "auto",
+      block: "nearest",
+      inline: "nearest",
+    });
   }
 }
 
