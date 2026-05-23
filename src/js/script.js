@@ -282,10 +282,19 @@ function preloadAudioBlobs() {
 
 // --- UI helpers ---
 
+function isPlaybackControl(element) {
+  return element === playButton || element === pauseButton || element === stopButton;
+}
+
 const showButton = (which) => {
+  const shouldPreserveFocus = isPlaybackControl(document.activeElement);
+  const nextButton = which === 'play' ? playButton : which === 'pause' ? pauseButton : stopButton;
+
   playButton.classList.toggle('hidden', which !== 'play');
   pauseButton.classList.toggle('hidden', which !== 'pause');
   stopButton.classList.toggle('hidden', which !== 'stop');
+
+  if (shouldPreserveFocus) nextButton.focus();
 };
 
 // core reference — set after createRadioCore(), used by updateMediaSession
@@ -524,6 +533,7 @@ const new_selector_button_example = document.getElementById('new_selector__butto
 const radios = radioSelect.querySelectorAll('option');
 const selectorOptionButtons = [];
 let selectorFocusedIndex = radioSelect.selectedIndex;
+let selectorReturnFocusElement = new_selector_open_button;
 
 function isSelectorOpen() {
   return !new_selector_content.classList.contains('hidden');
@@ -548,10 +558,19 @@ function focusOption(index) {
   selectorOptionButtons[selectorFocusedIndex].scrollIntoView({ behavior: "auto", block: "nearest" });
 }
 
-function openSelector({ focusSelected = false } = {}) {
+function setSelectorExpanded(isExpanded) {
+  [new_selector_open_button, posterImage].forEach(el => {
+    el.setAttribute('aria-expanded', String(isExpanded));
+  });
+}
+
+function openSelector({ focusSelected = false, trigger = document.activeElement } = {}) {
+  if (trigger === new_selector_open_button || trigger === posterImage) {
+    selectorReturnFocusElement = trigger;
+  }
   selectorFocusedIndex = radioSelect.selectedIndex;
   new_selector_content.classList.remove('hidden');
-  new_selector_open_button.setAttribute('aria-expanded', 'true');
+  setSelectorExpanded(true);
   syncSelectorSelection();
   if (focusSelected) focusOption(selectorFocusedIndex);
   else selectorOptionButtons[selectorFocusedIndex]?.scrollIntoView({ behavior: "auto", block: "nearest" });
@@ -561,15 +580,15 @@ function closeSelector({ returnFocus = false, blurHiddenFocus = false } = {}) {
   const activeElement = document.activeElement;
   const shouldBlurHiddenFocus = blurHiddenFocus && activeElement && document.getElementById('new_selector__parent').contains(activeElement);
   new_selector_content.classList.add('hidden');
-  new_selector_open_button.setAttribute('aria-expanded', 'false');
+  setSelectorExpanded(false);
   syncSelectorSelection();
-  if (returnFocus) new_selector_open_button.focus();
+  if (returnFocus) selectorReturnFocusElement.focus();
   else if (shouldBlurHiddenFocus) activeElement.blur();
 }
 
-function toggleSelector() {
+function toggleSelector(trigger) {
   if (isSelectorOpen()) closeSelector();
-  else openSelector();
+  else openSelector({ trigger });
 }
 
 function selectOption(index) {
@@ -600,12 +619,12 @@ radios.forEach((radio, index) => {
 });
 syncSelectorSelection();
 
-[new_selector_open_button, posterImage].forEach(el => el.addEventListener('click', toggleSelector));
+[new_selector_open_button, posterImage].forEach(el => el.addEventListener('click', () => toggleSelector(el)));
 
 function handleSelectorTriggerKeydown(e) {
   if (!['Enter', ' ', 'ArrowDown', 'ArrowUp'].includes(e.key)) return;
   e.preventDefault();
-  openSelector({ focusSelected: true });
+  openSelector({ focusSelected: true, trigger: e.currentTarget });
   if (e.key === 'ArrowDown') focusOption(selectorFocusedIndex + 1);
   if (e.key === 'ArrowUp') focusOption(selectorFocusedIndex - 1);
 }
