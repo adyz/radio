@@ -654,6 +654,24 @@ syncSelectorSelection();
 selectorTriggerButtons.forEach(el => el.addEventListener('click', () => toggleSelector(el)));
 
 function handleSelectorTriggerKeydown(e) {
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    if (isSelectorOpen()) focusOption(selectorFocusedIndex + 1);
+    else openSelector({ focusSelected: true, trigger: e.currentTarget });
+    return;
+  }
+
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    if (isSelectorOpen()) {
+      focusOption(selectorFocusedIndex - 1);
+    } else {
+      openSelector({ focusSelected: true, trigger: e.currentTarget });
+      focusOption(selectorOptionButtons.length - 1);
+    }
+    return;
+  }
+
   if (!['Enter', ' '].includes(e.key)) return;
   e.preventDefault();
   openSelector({ focusSelected: true, trigger: e.currentTarget });
