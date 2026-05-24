@@ -81,9 +81,8 @@ test.describe('Radio Player E2E', () => {
 
   test('all radio station buttons are rendered in selector', async ({ page }) => {
     await page.goto('/');
-    await page.locator('#new_selector__button').click();
-    const buttons = page.locator('#new_selector__content button:not(.hidden)');
-    await expect(buttons).toHaveCount(18); // 18 stations
+    await page.getByLabel('Alege postul de radio').click();
+    await expect(page.getByRole('listbox', { name: 'Posturi de radio' }).getByRole('option')).toHaveCount(18);
   });
 
   // --- Play / Pause / Stop ---
@@ -200,7 +199,7 @@ test.describe('Radio Player E2E', () => {
     await expect(page.locator('#new_selector__content')).toBeVisible();
 
     // Pick "Europa FM" (2nd station)
-    await page.locator('#new_selector__content button:not(.hidden)').nth(1).click();
+    await page.getByRole('option', { name: 'Europa FM' }).click();
 
     // Selector should close
     await expect(page.locator('#new_selector__content')).toBeHidden();
@@ -236,7 +235,7 @@ test.describe('Radio Player E2E', () => {
 
     const stationPicker = page.getByLabel('Alege postul de radio');
     const poster = page.locator('#posterImage img');
-    const options = page.locator('#new_selector__content button:not(.hidden)');
+    const options = page.getByRole('listbox', { name: 'Posturi de radio' }).getByRole('option');
 
     await stationPicker.click();
     await expect(page.locator('#new_selector__content')).toBeVisible();
@@ -253,7 +252,7 @@ test.describe('Radio Player E2E', () => {
     await page.goto('/');
 
     const stationPicker = page.getByLabel('Alege postul de radio');
-    const options = page.locator('#new_selector__content button:not(.hidden)');
+    const options = page.getByRole('listbox', { name: 'Posturi de radio' }).getByRole('option');
 
     await page.evaluate(() => localStorage.setItem('lastRadioIndex', '2'));
     await page.reload();
@@ -375,8 +374,8 @@ test.describe('Radio Player E2E', () => {
     await page.goto('/');
 
     // Open selector and pick "Digi FM" (3rd station, index 2)
-    await page.locator('#new_selector__button').click();
-    await page.locator('#new_selector__content button:not(.hidden)').nth(2).click();
+    await page.getByLabel('Alege postul de radio').click();
+    await page.getByRole('option', { name: 'Digi FM' }).click();
 
     // Wait for playing state — saveLastIndex is called only when playing starts
     await expect(page.locator('#pauseButton')).toBeVisible({ timeout: 8000 });
@@ -397,9 +396,8 @@ test.describe('Radio Player E2E', () => {
     await expect(page.locator('#playButton')).toBeVisible();
     await expect(page.locator('#posterImage img')).toHaveAttribute('src', /Coji%20Radio%20Player/);
 
-    await page.locator('#new_selector__button').click();
-    const buttons = page.locator('#new_selector__content button:not(.hidden)');
-    await expect(buttons).toHaveCount(18);
+    await page.getByLabel('Alege postul de radio').click();
+    await expect(page.getByRole('listbox', { name: 'Posturi de radio' }).getByRole('option')).toHaveCount(18);
   });
 
   // --- Loading / Error messages ---
