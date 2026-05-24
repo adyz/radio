@@ -589,11 +589,16 @@ function setSelectorExpanded(isExpanded) {
   });
 }
 
+function getCurrentSelectorIndex() {
+  const index = radioSelect.selectedIndex;
+  return index >= 0 && index < selectorOptionButtons.length ? index : 0;
+}
+
 function openSelector({ focusSelected = false, trigger = document.activeElement } = {}) {
   if (selectorTriggerButtons.includes(trigger)) {
     selectorReturnFocusElement = trigger;
   }
-  selectorFocusedIndex = radioSelect.selectedIndex;
+  selectorFocusedIndex = getCurrentSelectorIndex();
   new_selector_content.classList.remove('hidden');
   setSelectorExpanded(true);
   syncSelectorSelection();
@@ -620,7 +625,7 @@ function closeSelector({ returnFocus = false, blurHiddenFocus = false } = {}) {
 
 function toggleSelector(trigger) {
   if (isSelectorOpen()) closeSelector();
-  else openSelector({ trigger });
+  else openSelector({ focusSelected: true, trigger });
 }
 
 function selectOption(index) {
@@ -654,21 +659,15 @@ syncSelectorSelection();
 selectorTriggerButtons.forEach(el => el.addEventListener('click', () => toggleSelector(el)));
 
 function handleSelectorTriggerKeydown(e) {
-  if (e.key === 'ArrowDown') {
+  if (e.key === 'ArrowDown' && isSelectorOpen()) {
     e.preventDefault();
-    if (isSelectorOpen()) focusOption(selectorFocusedIndex + 1);
-    else openSelector({ focusSelected: true, trigger: e.currentTarget });
+    focusOption(selectorFocusedIndex + 1);
     return;
   }
 
-  if (e.key === 'ArrowUp') {
+  if (e.key === 'ArrowUp' && isSelectorOpen()) {
     e.preventDefault();
-    if (isSelectorOpen()) {
-      focusOption(selectorFocusedIndex - 1);
-    } else {
-      openSelector({ focusSelected: true, trigger: e.currentTarget });
-      focusOption(selectorOptionButtons.length - 1);
-    }
+    focusOption(selectorFocusedIndex - 1);
     return;
   }
 

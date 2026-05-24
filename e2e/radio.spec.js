@@ -236,10 +236,11 @@ test.describe('Radio Player E2E', () => {
 
     const stationPicker = page.getByLabel('Alege postul de radio');
     const poster = page.locator('#posterImage img');
+    const options = page.locator('#new_selector__content button:not(.hidden)');
 
     await stationPicker.click();
     await expect(page.locator('#new_selector__content')).toBeVisible();
-    await expect(stationPicker).toBeFocused();
+    await expect(options.first()).toBeFocused();
 
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('Enter');
@@ -248,23 +249,30 @@ test.describe('Radio Player E2E', () => {
     await expect(stationPicker).toBeFocused();
   });
 
-  test('ArrowDown opens selector from station picker for remote-style navigation', async ({ page }) => {
-    await mockStreams(page);
+  test('opening selector focuses the selected station', async ({ page }) => {
     await page.goto('/');
 
     const stationPicker = page.getByLabel('Alege postul de radio');
-    const poster = page.locator('#posterImage img');
+    const options = page.locator('#new_selector__content button:not(.hidden)');
+
+    await page.evaluate(() => localStorage.setItem('lastRadioIndex', '2'));
+    await page.reload();
+
+    await stationPicker.click();
+    await expect(page.locator('#new_selector__content')).toBeVisible();
+    await expect(options.nth(2)).toBeFocused();
+  });
+
+  test('ArrowDown keeps the closed selector available for remote focus navigation', async ({ page }) => {
+    await page.goto('/');
+
+    const stationPicker = page.getByLabel('Alege postul de radio');
+    const selector = page.locator('#new_selector__content');
 
     await stationPicker.focus();
     await page.keyboard.press('ArrowDown');
-    await expect(page.locator('#new_selector__content')).toBeVisible();
-    await expect(page.locator('#new_selector__content [role="option"][tabindex="0"]')).toBeFocused();
 
-    await page.keyboard.press('ArrowDown');
-    await page.keyboard.press('Enter');
-
-    await expect(poster).toHaveAttribute('src', /Europa/, { timeout: 8000 });
-    await expect(stationPicker).toBeFocused();
+    await expect(selector).toBeHidden();
   });
 
   test('keyboard users can open and navigate the selector from the poster', async ({ page }) => {
