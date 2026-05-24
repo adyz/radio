@@ -70,6 +70,15 @@ test.describe('Radio Player E2E', () => {
     await expect(page.locator('#stopButton')).toBeHidden();
   });
 
+  test('play button is focused on first load so Enter starts playback', async ({ page }) => {
+    await mockStreams(page);
+    await page.goto('/');
+
+    await expect(page.getByLabel('Redare')).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.getByLabel('Pauză')).toBeFocused({ timeout: 8000 });
+  });
+
   test('all radio station buttons are rendered in selector', async ({ page }) => {
     await page.goto('/');
     await page.locator('#new_selector__button').click();
