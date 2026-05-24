@@ -37,3 +37,37 @@
     --color-StaticWhite: #fffdef;
   }
 }
+
+@layer base {
+  :where(
+    a,
+    button,
+    input,
+    select,
+    textarea,
+    summary,
+    [tabindex]:not([tabindex="-1"])
+  ) {
+    outline: none;
+    transition:
+      box-shadow 140ms ease,
+      background-color 140ms ease,
+      stroke 140ms ease;
+  }
+
+  :where(
+    a,
+    button,
+    input,
+    select,
+    textarea,
+    summary,
+    [tabindex]:not([tabindex="-1"])
+  ):focus-visible {
+    outline: 1px solid color-mix(in srgb, var(--color-Red) 82%, var(--color-Bg));
+    outline-offset: 2px;
+    background-color: color-mix(in srgb, var(--color-Red) 4%, transparent);
+    box-shadow:
+      inset 0 -8px 14px color-mix(in srgb, var(--color-Red) 4%, transparent);
+  }
+}

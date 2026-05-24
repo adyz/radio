@@ -654,6 +654,18 @@ syncSelectorSelection();
 selectorTriggerButtons.forEach(el => el.addEventListener('click', () => toggleSelector(el)));
 
 function handleSelectorTriggerKeydown(e) {
+  if (e.key === 'ArrowDown' && isSelectorOpen()) {
+    e.preventDefault();
+    focusOption(selectorFocusedIndex + 1);
+    return;
+  }
+
+  if (e.key === 'ArrowUp' && isSelectorOpen()) {
+    e.preventDefault();
+    focusOption(selectorFocusedIndex - 1);
+    return;
+  }
+
   if (!['Enter', ' '].includes(e.key)) return;
   e.preventDefault();
   openSelector({ focusSelected: true, trigger: e.currentTarget });
