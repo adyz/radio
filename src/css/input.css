@@ -70,18 +70,20 @@
       inset 0 -8px 14px color-mix(in srgb, var(--color-Red) 4%, transparent);
   }
 
-  :where(
-    a,
-    button,
-    input,
-    select,
-    textarea,
-    summary,
-    [tabindex]:not([tabindex="-1"])
-  ):focus:not(:focus-visible) {
-    outline: none;
-    background-color: transparent;
-    box-shadow: none;
+  @supports selector(:focus-visible) {
+    :where(
+      a,
+      button,
+      input,
+      select,
+      textarea,
+      summary,
+      [tabindex]:not([tabindex="-1"])
+    ):focus:not(:focus-visible) {
+      outline: none;
+      background-color: transparent;
+      box-shadow: none;
+    }
   }
 
   @media (forced-colors: active) {
