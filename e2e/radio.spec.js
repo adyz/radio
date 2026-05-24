@@ -257,6 +257,7 @@ test.describe('Radio Player E2E', () => {
     await stationPicker.focus();
     await page.keyboard.press('ArrowDown');
     await expect(page.locator('#new_selector__content')).toBeVisible();
+    await expect(page.locator('#new_selector__content [role="option"][tabindex="0"]')).toBeFocused();
 
     await page.keyboard.press('ArrowDown');
     await page.keyboard.press('Enter');
