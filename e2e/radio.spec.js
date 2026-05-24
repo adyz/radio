@@ -248,6 +248,25 @@ test.describe('Radio Player E2E', () => {
     await expect(stationPicker).toBeFocused();
   });
 
+  test('ArrowDown opens selector from station picker for remote-style navigation', async ({ page }) => {
+    await mockStreams(page);
+    await page.goto('/');
+
+    const stationPicker = page.getByLabel('Alege postul de radio');
+    const poster = page.locator('#posterImage img');
+
+    await stationPicker.focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(page.locator('#new_selector__content')).toBeVisible();
+    await expect(page.locator('#new_selector__content [role="option"][tabindex="0"]')).toBeFocused();
+
+    await page.keyboard.press('ArrowDown');
+    await page.keyboard.press('Enter');
+
+    await expect(poster).toHaveAttribute('src', /Europa/, { timeout: 8000 });
+    await expect(stationPicker).toBeFocused();
+  });
+
   test('keyboard users can open and navigate the selector from the poster', async ({ page }) => {
     await mockStreams(page);
     await page.goto('/');
