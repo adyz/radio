@@ -287,6 +287,11 @@ function isPlaybackControl(element) {
   return element === playButton || element === pauseButton || element === stopButton;
 }
 
+function focusInitialPlaybackControl() {
+  if (document.activeElement && document.activeElement !== document.body) return;
+  playButton.focus();
+}
+
 const showButton = (which) => {
   const shouldPreserveFocus = isPlaybackControl(document.activeElement);
   const nextButton = which === 'play' ? playButton : which === 'pause' ? pauseButton : stopButton;
@@ -386,6 +391,7 @@ core = createRadioCore({
   performanceNow:   () => performance.now(),
   isOnline:          () => navigator.onLine,
 });
+focusInitialPlaybackControl();
 
 // --- Event listeners ---
 
