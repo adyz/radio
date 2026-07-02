@@ -6,31 +6,12 @@ const SOUND_CACHE_NAME = 'radio-sounds-v1';
 
 // Helper: intercept all radio stream URLs and serve our local test tone instead
 async function mockStreams(page) {
-  await page.route(STREAM_URL_RE, async (route) => {
-    const url = route.request().url();
-    if (url.endsWith('.m3u8')) {
-      // Return a minimal live HLS playlist; the segment URL also matches
-      // STREAM_URL_RE so Playwright will intercept it and serve the test tone.
-      const playlist = [
-        '#EXTM3U',
-        '#EXT-X-VERSION:3',
-        '#EXT-X-TARGETDURATION:10',
-        '#EXT-X-MEDIA-SEQUENCE:0',
-        '#EXTINF:10.0,',
-        'https://stream.radiofrance.fr/fip/test-seg0.mp3',
-      ].join('\n');
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/vnd.apple.mpegurl',
-        body: playlist,
-      });
-    } else {
-      await route.fulfill({
-        status: 200,
-        contentType: 'audio/mpeg',
-        path: 'src/sounds/test-tone.mp3',
-      });
-    }
+  await page.route(STREAM_URL_RE, (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'audio/mpeg',
+      path: 'src/sounds/test-tone.mp3',
+    });
   });
 }
 
