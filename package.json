@@ -30,6 +30,7 @@
     "concurrently": "^9.1.2",
     "cpx": "^1.5.0",
     "fs-extra": "^11.3.0",
+    "hls.js": "^1.6.16",
     "html-minifier-terser": "^7.2.0",
     "live-server": "^1.2.2",
     "terser": "^5.39.0",

@@ -56,6 +56,14 @@ async function minifyJS() {
 
         const inputFile = path.join(jsSrcFolder, file);
         const outputFile = path.join(jsDistFolder, file);
+
+        // Already-minified vendor files are copied as-is
+        if (file.endsWith(".min.js")) {
+            await fs.copy(inputFile, outputFile);
+            console.log(`✅ Copied vendor file: ${file}`);
+            continue;
+        }
+
         const code = await fs.readFile(inputFile, "utf8");
         const result = await terserMinify(code, {
             compress: { pure_funcs: ["console.log", "console.info", "console.debug"] },
