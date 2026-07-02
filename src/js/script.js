@@ -457,7 +457,13 @@ player.addEventListener('pause', () => {
 // Stream failure during playback (lost WiFi, server died, etc.)
 player.addEventListener('error', () => core.onPlayerError());
 
+function isCurrentStreamHls() {
+  return /\.m3u8(?:[?#].*)?$/.test(player.currentSrc || player.src);
+}
+
 player.addEventListener('stalled', () => {
+  if (isCurrentStreamHls()) return;
+
   const playIdAtStall = core._getPlayId();
   const stalledTimeout = setTimeout(() => {
     // Only treat as error if we're still on the same stream
