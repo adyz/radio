@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const STREAM_URL_RE = /live\.kissfm|europafm|digifm|magicfm|virginradio|srr\.ro|profm|rockfm|guerrillaradio|nationalfm|dancefm|radiovibefm|radioprob|vanillaradio/;
+const STREAM_URL_RE = /live\.kissfm|europafm|digifm|magicfm|virginradio|srr\.ro|profm|rockfm|guerrillaradio|nationalfm|dancefm|radiovibefm|radioprob|vanillaradio|radiofrance/;
 const SOUND_URL_RE = /\/sounds\/(?:loading-low|error-low)\.mp3(?:\?.*)?$/;
 const SOUND_CACHE_NAME = 'radio-sounds-v1';
 
@@ -82,7 +82,7 @@ test.describe('Radio Player E2E', () => {
   test('all radio station buttons are rendered in selector', async ({ page }) => {
     await page.goto('/');
     await page.getByLabel('Alege postul de radio').click();
-    await expect(page.getByRole('listbox', { name: 'Posturi de radio' }).getByRole('option')).toHaveCount(18);
+    await expect(page.getByRole('listbox', { name: 'Posturi de radio' }).getByRole('option')).toHaveCount(19);
   });
 
   // --- Play / Pause / Stop ---
@@ -181,11 +181,11 @@ test.describe('Radio Player E2E', () => {
     await page.locator('#playButton').click();
     await expect(page.locator('#pauseButton')).toBeVisible({ timeout: 8000 });
 
-    // Click prev — should wrap from station 0 to station 17 (last = Vanilla Radio Fresh)
+    // Click prev — should wrap from station 0 to station 18 (last = FIP Radio France)
     await page.locator('#prevButton').click();
 
     // Wait for poster to update to last station
-    await expect(page.locator('#posterImage img')).toHaveAttribute('src', /Vanilla/, { timeout: 8000 });
+    await expect(page.locator('#posterImage img')).toHaveAttribute('src', /FIP/, { timeout: 8000 });
   });
 
   // --- Station selector UI ---
@@ -397,7 +397,7 @@ test.describe('Radio Player E2E', () => {
     await expect(page.locator('#posterImage img')).toHaveAttribute('src', /Coji%20Radio%20Player/);
 
     await page.getByLabel('Alege postul de radio').click();
-    await expect(page.getByRole('listbox', { name: 'Posturi de radio' }).getByRole('option')).toHaveCount(18);
+    await expect(page.getByRole('listbox', { name: 'Posturi de radio' }).getByRole('option')).toHaveCount(19);
   });
 
   // --- Loading / Error messages ---
