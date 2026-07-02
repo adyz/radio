@@ -369,39 +369,6 @@ const updateMediaSession = (newState) => {
   maybeReloadForPendingServiceWorkerUpdate(newState);
 };
 
-// --- HLS.js support for m3u8 streams ---
-
-let hlsInstance = null;
-
-function destroyHls() {
-  if (hlsInstance) {
-    hlsInstance.destroy();
-    hlsInstance = null;
-  }
-}
-
-function hlsSetSrc(url) {
-  destroyHls();
-  if (!url) {
-    player.src = '';
-    return;
-  }
-  if (url.endsWith('.m3u8') && window.Hls && window.Hls.isSupported()) {
-    hlsInstance = new window.Hls();
-    hlsInstance.on(window.Hls.Events.ERROR, (_event, data) => {
-      if (data.fatal) {
-        console.error('[hls.js] fatal error', data.type, data.details);
-        player.dispatchEvent(new Event('error'));
-      }
-    });
-    hlsInstance.loadSource(url);
-    hlsInstance.attachMedia(player);
-  } else {
-    // Safari supports HLS natively; non-m3u8 URLs work everywhere
-    player.src = url;
-  }
-}
-
 core = createRadioCore({
   getStationUrl:    (i) => radioSelect.options[i].value,
   getStationCount:  () => radioSelect.options.length,
@@ -409,8 +376,8 @@ core = createRadioCore({
   setSelectedIndex: (i) => { radioSelect.selectedIndex = i; },
   playerPlay:       () => player.play(),
   playerPause:      () => player.pause(),
-  playerSetSrc:     (url) => hlsSetSrc(url),
-  playerLoad:       () => { if (!hlsInstance) player.load(); },
+  playerSetSrc:     (url) => { player.src = url; },
+  playerLoad:       () => player.load(),
   playerIsPaused:   () => player.paused,
   loadingSound:     loadingNoiseInstance,
   errorSound:       errorNoiseInstance,
