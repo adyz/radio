@@ -213,6 +213,9 @@ node --version  # should be v20.19.0 or newer
 
 ```bash
 npm run dev       # vite dev server (include tailwind)
+                  #   + http://localhost:5173/?inspect → Stately Inspector:
+                  #     diagrama LIVE a masinii de stari, cu tranzitii/events
+                  #     in timp real (doar dev; zero bytes in productie)
 npm test          # unit tests (vitest)
 npm run test:coverage  # unit coverage + raport HTML in coverage/index.html
 npm run test:e2e  # e2e tests (playwright, pornește singur serverul)

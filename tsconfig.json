@@ -9,7 +9,7 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "forceConsistentCasingInFileNames": true,
-    "types": []
+    "types": ["vite/client"]
   },
   "include": ["src/js/**/*.ts"]
 }

@@ -17,6 +17,8 @@ interface ActorClock {
   clearTimeout(id: unknown): void;
 }
 
+type ActorOptions = NonNullable<Parameters<typeof createActor>[1]>;
+
 export type RadioState =
   | 'idle'
   | 'loading'
@@ -79,8 +81,14 @@ export const SOUND_SUPERVISOR_INTERVAL_MS = 2500;
 export const USER_PAUSE_INTENT_MS = 2000; // how long a pauseRadio() call explains a native 'pause'
 export const LONG_PAUSE_RESTART_MS = 2000; // paused longer than this ⇒ restart the live stream
 
-export function createRadioCore(deps: RadioDeps, options: { clock?: ActorClock } = {}) {
-  const actor = createActor(createRadioMachine(deps), options.clock ? { clock: options.clock } : {});
+export function createRadioCore(
+  deps: RadioDeps,
+  options: { clock?: ActorClock; inspect?: ActorOptions['inspect'] } = {},
+) {
+  const actor = createActor(createRadioMachine(deps), {
+    ...(options.clock ? { clock: options.clock } : {}),
+    ...(options.inspect ? { inspect: options.inspect } : {}),
+  });
 
   // Same transition log the old state machine printed.
   let prev: RadioState | null = null;

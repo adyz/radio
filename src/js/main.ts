@@ -88,6 +88,16 @@ const showButton = (which: 'play' | 'pause' | 'stop') => {
 
 // --- Core ---
 
+// Dev-only: live machine diagram via the Stately Inspector.
+// Run `npm run dev` and open http://localhost:5173/?inspect — a stately.ai
+// window shows the running machine with transitions/events in real time.
+// Compile-time dead code in production (import.meta.env.DEV is false), and
+// opt-in via the URL param so the e2e runs (dev server!) never open it.
+const inspector =
+  import.meta.env.DEV && new URLSearchParams(window.location.search).has('inspect')
+    ? (await import('@statelyai/inspect')).createBrowserInspector()
+    : undefined;
+
 const core = createRadioCore({
   getStationUrl:    (i) => radioSelect.options[i].value,
   getStationCount:  () => radioSelect.options.length,
@@ -115,7 +125,7 @@ const core = createRadioCore({
   clearInterval: (id) => clearInterval(id ?? undefined),
   performanceNow:   () => performance.now(),
   isOnline:          () => navigator.onLine,
-});
+}, inspector ? { inspect: inspector.inspect } : {});
 connectMediaSessionCore(core);
 focusInitialPlaybackControl();
 
