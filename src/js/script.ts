@@ -144,6 +144,11 @@ interface SfxInstance {
   isStartPending(): boolean;
   onStartSettled(callback: () => void): void;
   setPartner(partner: SfxInstance): void;
+  isAudiblyPlaying(): boolean;
+  /** Last-resort iOS takeover: swap this (already playing) element's source
+   *  to the partner's sound — a continuation, which backgrounded iOS allows,
+   *  unlike the fresh start it just denied. */
+  hijackWith(src: string): void;
 }
 
 function audioInstance(htmlElement: HTMLAudioElement): SfxInstance {
@@ -162,6 +167,8 @@ function audioInstance(htmlElement: HTMLAudioElement): SfxInstance {
   let partner: SfxInstance | null = null;
   let startPending = false;
   let stopDeferGeneration = 0;
+  let borrowedSrc: string | null = null; // set while this element carries the partner's sound
+  let hijackAttempted = false; // one takeover attempt per play cycle
   const startSettlers: Array<() => void> = [];
 
   const settleStart = () => {
@@ -209,6 +216,12 @@ function audioInstance(htmlElement: HTMLAudioElement): SfxInstance {
     // Any play intent cancels a deferred stop queued for this instance
     // (e.g. error → loading → error flapping while the partner never started).
     stopDeferGeneration++;
+    hijackAttempted = false;
+    if (borrowedSrc) {
+      // The element is carrying the partner's sound — reclaim it with our own.
+      borrowedSrc = null;
+      isPlaying = false;
+    }
     if (!isPlaying) {
       startPending = true;
       const gen = ++playGeneration;
@@ -226,6 +239,8 @@ function audioInstance(htmlElement: HTMLAudioElement): SfxInstance {
     htmlElement.pause();
     htmlElement.src = '';
     isPlaying = false;
+    borrowedSrc = null;
+    hijackAttempted = false;
   };
 
   return {
@@ -254,14 +269,21 @@ function audioInstance(htmlElement: HTMLAudioElement): SfxInstance {
     ensure() {
       if (!isPlaying) {
         play();
-        return;
-      }
-      if (htmlElement.paused) {
+      } else if (htmlElement.paused) {
         const gen = playGeneration;
         htmlElement.play().catch((error) => {
           if (gen !== playGeneration) return;
           if (error.name !== 'AbortError') isPlaying = false; // retried next tick
         });
+      }
+
+      // iOS last resort: we still haven't produced audio (backgrounded iOS
+      // denies FRESH playback starts), but the partner element is audibly
+      // playing — and a playing element may swap sources and continue
+      // (playlist-style). Borrow it so the right sound is heard.
+      if (startPending && htmlElement.paused && !hijackAttempted && partner?.isAudiblyPlaying()) {
+        hijackAttempted = true;
+        partner.hijackWith(blobUrl || initialSrc);
       }
     },
     warmUp() {
@@ -287,6 +309,22 @@ function audioInstance(htmlElement: HTMLAudioElement): SfxInstance {
     },
     setPartner(p: SfxInstance) {
       partner = p;
+    },
+    isAudiblyPlaying: () => isPlaying && !htmlElement.paused,
+    hijackWith(src: string) {
+      if (!isPlaying || htmlElement.paused) return; // nothing audible to borrow
+      if (borrowedSrc === src) return;              // already carrying it
+      borrowedSrc = src;
+      htmlElement.src = src;
+      htmlElement.currentTime = 0;
+      htmlElement.play().catch(() => {
+        // The continuation was denied too — restore our own sound rather
+        // than end up fully silent.
+        borrowedSrc = null;
+        htmlElement.src = blobUrl || initialSrc;
+        htmlElement.currentTime = 0;
+        htmlElement.play().catch(() => {});
+      });
     },
   };
 }
