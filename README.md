@@ -8,20 +8,33 @@ Deployed la [coji.ro](https://coji.ro).
 
 ## Arhitectură
 
+TypeScript strict + Vite + XState v5. Stratul DOM e spart în module cu responsabilitate unică; logica trăiește într-o mașină de stări declarativă.
+
 ```
-index.html          ← UI (butoane, poster, selector)
-  └─ script.js      ← DOM glue: event listeners, MediaSession, Cloudinary images
-       └─ radioCore.js   ← Logică pură (zero DOM), testabilă izolat
-            └─ stateMachine.js  ← Mașină de stare generică
+index.html               ← UI (butoane, poster, selector)
+  └─ main.ts             ← entry point: doar wiring (deps + event listeners)
+       ├─ dom.ts              ← referințele DOM partajate (el<T> aruncă la id lipsă)
+       ├─ labels.ts           ← textele user-facing (sursă unică)
+       ├─ storage.ts          ← persistența ultimului post
+       ├─ cloudinary.ts       ← imagini status + pre-cache offline
+       ├─ theme.ts            ← theme color pe prefers-color-scheme
+       ├─ soundEffects.ts     ← audioInstance: blob preload, warmUp, ensure
+       ├─ mediaSession.ts     ← Now Playing + re-înregistrare handlers (iOS)
+       ├─ serviceWorker.ts    ← înregistrare + reload amânat la idle
+       ├─ stationSelector.ts  ← listbox accesibil (focus, keyboard, ARIA)
+       └─ radioCore.ts        ← adaptor subțire: API imperativ → events
+            └─ radioMachine.ts     ← mașina XState v5 (logică pură, zero DOM)
 ```
 
-**Principiu:** `radioCore.js` nu importă nimic din browser. Toate interacțiunile (audio, DOM, timere) vin prin obiectul `deps` — dependency injection manual. Asta permite testarea unitară fără browser real.
+**Principiu:** `radioMachine.ts` nu importă nimic din browser. Toate interacțiunile (audio, DOM, timere de interval) vin prin obiectul `deps` (interfața `RadioDeps`, verificată de compilator) — dependency injection. Asta permite testarea unitară fără browser real, cu un `SimulatedClock` injectat pentru delay-uri.
 
 ---
 
 ## Mașina de stare
 
-7 stări, fiecare cu side-effects declarative într-un tabel (`STATE_FX`):
+XState v5, 7 stări. Tot ce era orchestrare manuală e acum declarativ: timerii sunt `after`-delays (ieșirea din stare le anulează), `player.play()` e promise actor invocat (un rezultat întârziat după ieșirea din stare e aruncat prin construcție — fostul mecanism `playId`), iar watchdog-ul și supervizorul de sunete sunt callback actors care trăiesc exact cât stările lor. Side-effects-urile rămân un tabel declarativ (`STATE_FX`), aplicat ca entry action la fiecare intrare în stare.
+
+> 🔍 **Vizualizare:** `npm run dev` + `http://localhost:5173/?inspect` deschide Stately Inspector cu diagrama LIVE a mașinii (tranziții/evenimente în timp real). Pentru diagrama statică, lipește `src/js/radioMachine.ts` în [stately.ai/editor](https://stately.ai/editor).
 
 ```
                 ┌─────────────────────────────────────┐
@@ -40,7 +53,7 @@ index.html          ← UI (butoane, poster, selector)
                    │     ▼                │
                    │  ┌──────────┐        │
                    │  │ retrying │ (max 1)│
-                   │  │ 🔊 keeps │        │
+                   │  │ 🔊 loading│        │
                    │  └────┬─────┘        │
                    │       │ fail again   │
                    ▼       ▼              │
@@ -70,21 +83,21 @@ index.html          ← UI (butoane, poster, selector)
 | `loading` | ■ stop | **play** | stop | **show** | hide |
 | `playing` | ❚❚ pause | stop | stop | hide | hide |
 | `paused` | ▶ play | stop | stop | hide | hide |
-| `retrying` | ■ stop | **keep** | stop | hide | hide |
+| `retrying` | ■ stop | **play** | stop | hide | hide |
 | `error` | ■ stop | stop | **play** | hide | **show** |
 | `recovering` | ■ stop | stop | **keep** | hide | **show** |
 
-`keep` = nu opri/porni sunetul, lasă-l cum e. Tranziția `error → recovering` nu re-pornește sunetul de eroare — continuă neschimbat.
+`keep` = nu opri/porni sunetul, lasă-l cum e. Tranziția `error → recovering` nu re-pornește sunetul de eroare — continuă neschimbat. `retrying` pornește explicit sunetul de loading (`play`, nu `keep`): un retry poate veni și dintr-un stall de watchdog în timpul redării, unde niciun sunet nu era activ — iar regula produsului e că **odată ce userul a dat play, ceva trebuie să se audă mereu** (stream, loading sau eroare; liniște doar în idle/paused).
 
 ---
 
 ## Recovery și offline
 
-Problema clasică pe net intermitent: stream-ul moare **fără niciun eveniment** (`error`/`stalled` nu se emit, mai ales pe HLS) și aplicația rămâne blocată — fie „cântă" liniște, fie stă în error pentru totdeauna. Soluția are trei piese, toate în `radioCore.js`:
+Problema clasică pe net intermitent: stream-ul moare **fără niciun eveniment** (`error`/`stalled` nu se emit, mai ales pe HLS) și aplicația rămâne blocată — fie „cântă" liniște, fie stă în error pentru totdeauna. Soluția are patru piese, toate în `radioMachine.ts`:
 
 ### 1. Watchdog pe progresul redării
 
-Singurul semnal de încredere e progresul efectiv: cât timp starea e `playing`, `player.currentTime` trebuie să avanseze. Un interval (`WATCHDOG_INTERVAL_MS` = 2s) compară valoarea; după `WATCHDOG_STALL_TICKS` (3) tick-uri înghețate consecutive (≈6s) → ciclul normal de retry/recovery. Zero falsuri pozitive pe HLS (currentTime avansează din buffer și între fetch-uri de segmente).
+Singurul semnal de încredere e progresul efectiv: cât timp starea e `playing`, `player.currentTime` trebuie să avanseze. Un callback actor invocat doar în `playing` (`WATCHDOG_INTERVAL_MS` = 2s) compară valoarea; după `WATCHDOG_STALL_TICKS` (3) tick-uri înghețate consecutive (≈6s) → evenimentul `STALLED` → ciclul normal de retry/recovery. Zero falsuri pozitive pe HLS (currentTime avansează din buffer și între fetch-uri de segmente).
 
 > De ce nu evenimentul `stalled`? Browserele îl emit **și în timpul redării normale de HLS** (pauzele dintre segmente arată ca „stalled"), ceea ce producea flash-uri false de „Se încarcă..."; iar la înghețuri reale de multe ori nu se emite deloc. A fost eliminat complet.
 
@@ -96,6 +109,12 @@ Backoff exponențial: 10s → 20s → 40s → plafonat la `RECOVERY_DELAY_MAX_MS
 
 - `onLine === false` e de încredere → re-verificare fixă la 10s, fără să atingă rețeaua și fără escaladare de backoff; evenimentul `online` declanșează retry instant.
 - `onLine === true` poate fi fals pozitiv (WiFi fără internet) → se încearcă mereu; încercarea stream-ului e cea mai onestă probă de conectivitate.
+
+### 4. Pauza userului vs. pauza sistemului + supervizorul de sunete
+
+Când stream-ul moare, OS-ul (mai ales iOS) dă `pause` nativ pe element — indistinguibil de pauza userului fără context. `pauseRadio()` marchează intenția userului (`USER_PAUSE_INTENT_MS` = 2s); un pause **neașteptat + offline** intră pe pipeline-ul de retry/eroare (cu sunete), nu în `paused`. Un pause neașteptat online rămâne pauză (căști scoase, telefon, altă aplicație).
+
+Iar pentru că sunetele de feedback pot fi refuzate de browser (autoplay/background) sau oprite de OS, un **supervizor** (callback actor în loading/retrying/error/recovering, tick la 2.5s) re-asertează sunetul cerut de stare via `ensure()` — la nesfârșit. Sunetul de eroare nu se oprește niciodată singur: doar recuperarea sau stop/pauză de la user îl tac.
 
 ### Known issue: playerul HLS nativ din Chromium spamează request-uri
 
@@ -109,16 +128,16 @@ Măsurat (iulie 2026, Chromium 145/149): un `<audio>` cu `.m3u8` atașat căruia
 
 ## Teste
 
-### Unit tests — `radioCore.test.js` (53 de teste, Vitest)
+### Unit tests — `radioCore.test.ts` (63 de teste, Vitest)
 
-Testează logica pură din `radioCore.js` **fără browser**. Toate dependențele (player, timere, DOM) sunt mock-uite manual prin `makeDeps()`.
+Testează mașina + adaptorul **fără browser**. Toate dependențele (player, sunete, DOM) sunt mock-uite manual prin `makeDeps()`, iar `after`-delay-urile mașinii rulează pe un `SimulatedClock` injectat (avansat manual cu `clock.increment(ms)`).
 
 ```bash
 npm test          # vitest run
 npm run test:coverage  # vitest run --coverage
 ```
 
-Coverage-ul Vitest este configurat pentru modulele unit-testabile (`radioCore.js` și `stateMachine.js`). Codul DOM/browser glue din `script.js` este acoperit prin Playwright e2e, nu prin raportul de unit coverage.
+Coverage-ul Vitest este configurat pentru modulele unit-testabile (`radioCore.ts` și `radioMachine.ts`). Codul DOM/browser din `main.ts` și module este acoperit prin Playwright e2e, nu prin raportul de unit coverage.
 
 După `npm run test:coverage`, raportul HTML este generat în `coverage/index.html`, iar sumarul apare direct în terminal.
 
@@ -130,18 +149,20 @@ Notă: dacă sumarul text afișează numere de linii lângă un fișier care are
 | **playRadio — happy path** | `idle → loading → playing` | Verifică: src setat, playerPlay apelat, stare finală `playing` |
 | **playRadio — error + retry** | `loading → retrying → error` | Retry după 3s, error după `MAX_RETRIES` (1), recovery programat |
 | **pause / resume** | `playing ↔ paused` | `onPlayerPause`, `onPlayerPlay`, ignoră pause în alte stări |
-| **stopRadio** | Oprește din orice stare | Timere anulate, `playId` incrementat, stare `idle` |
+| **stopRadio** | Oprește din orice stare | `after`-delays anulate la ieșirea din stare, stare `idle` |
 | **onPlayButtonClick** | Pornește din `idle`, `error`, `paused` | Nu face nimic din `loading`, `playing` |
 | **prevRadio / nextRadio** | Navigare circulară | `next` din ultima → prima, `prev` din prima → ultima |
 | **loading timeout** | Timeout după `LOADING_TIMEOUT_MS` (6s) | Dacă stream-ul nu pornește → retry → error |
-| **rapid station switching** | Doar ultimul `playRadio` câștigă | Apeluri rapide: doar ultimul `playId` e valid |
-| **retrying keeps loading sound** | `keep` din `STATE_FX` | La `loading → retrying`, sunetul de loading continuă |
+| **rapid station switching** | Doar ultimul `playRadio` câștigă | Re-intrarea în `loading` aruncă actorul invocat anterior |
+| **retrying plays loading sound** | `play` din `STATE_FX` | În `retrying` sunetul de loading e audibil, indiferent de unde s-a venit |
 | **togglePlayPause** | Un singur buton play/pause | Din `idle` pornește, din `playing` pauzează |
 | **restart after long pause** | Pauză > 2s → restart stream | Stream-urile radio nu bufferează, re-play după pauză lungă |
 | **recovery backoff** | Backoff exponențial fără plafon | 10s → 20s → 40s → 60s cap, mereu o încercare programată; offline: re-check fix la 10s |
 | **playback watchdog** | `currentTime` înghețat ≈6s → retry | Stall silențios detectat fără evenimente; progresul resetează numărătoarea; se oprește la pause/stop |
+| **system pause vs user pause** | Pauza OS ≠ pauza userului | Pause neașteptat + offline → retry cu sunete; pauza userului rămâne pauză (și offline); intenția expiră după 2s |
+| **sound supervisor** | Mereu un sunet audibil | `ensure()` re-asertat periodic; eroarea nu tace niciodată singură; play înainte de stop la schimbul de sunete |
 
-### E2E tests — `e2e/radio.spec.js` (35 de teste, Playwright)
+### E2E tests — `e2e/radio.spec.js` (37 de teste, Playwright)
 
 Testează aplicația completă în Chromium real. Stream-urile radio sunt interceptate și servite local (`test-tone.mp3`, plus un playlist HLS mock cu segmente `.ts` reale pentru stația FIP — Chromium redă `.m3u8` nativ).
 
@@ -172,21 +193,23 @@ npm run test:e2e  # playwright test
 | | error and idle images render offline via SW cache | Offline → poster randat (`naturalWidth > 0`) |
 | **Offline — sunete** | error sound plays while offline | Sunetul cântă, zero request-uri de rețea pentru sunete |
 | | loading sound plays while the next station is still connecting | Sunetul de loading cântă instant, fără rețea |
+| **Offline mid-playback** | going offline while playing keeps a sound on and recovers by itself | Pauza nativă a OS-ului la net căzut → retry/eroare audibile, NU `paused`; revine singur la net |
+| | pausing on purpose stays paused — even offline | Pauza deliberată a userului e respectată: liniște, fără retry |
 
 ### Cum se leagă
 
 ```
                     ┌─────────────────────────┐
-                    │   stateMachine.js        │  Generică, zero cunoștințe radio
+                    │   radioMachine.ts        │  Mașina XState v5 (logică pură)
                     └────────────▲─────────────┘
                                  │ import
                     ┌────────────┴─────────────┐
-                    │   radioCore.js            │  Logică radio pură
-                    │   (deps = mock objects)   │  ← Unit tests (Vitest)
+                    │   radioCore.ts            │  Adaptor: API imperativ → events
+                    │   (deps = mock objects)   │  ← Unit tests (Vitest + SimulatedClock)
                     └────────────▲─────────────┘
                                  │ import
                     ┌────────────┴─────────────┐
-                    │   script.js               │  DOM, audio, MediaSession
+                    │   main.ts + module        │  DOM, audio, MediaSession, SW
                     │   (deps = real browser)   │
                     └────────────▲─────────────┘
                                  │ served by
@@ -196,7 +219,7 @@ npm run test:e2e  # playwright test
                     └──────────────────────────┘
 ```
 
-- **Unit tests** — testează `radioCore.js` izolat, fără browser, cu mock-uri. Rapide (~200ms). Verifică tranzițiile, side-effects, edge cases (timeout, retry, rapid switching).
+- **Unit tests** — testează mașina + adaptorul izolat, fără browser, cu mock-uri. Rapide (~250ms). Verifică tranzițiile, side-effects, edge cases (timeout, retry, rapid switching, pauze de sistem).
 - **E2E tests** — testează tot stack-ul în Chromium. Stream-uri interceptate cu `route.fulfill()`, Cloudinary mock-uit cu 1×1 PNG. Verifică UI real, Service Worker, Cache API, blob preload, localStorage.
 
 ---
