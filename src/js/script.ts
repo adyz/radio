@@ -365,31 +365,10 @@ function registerMediaSessionHandlers() {
 // the lock-screen shows prev/next instead of skip ±10 s.
 // Also force playbackState='playing' so macOS doesn't briefly show "Not Playing"
 // in the gap between pausing the main player and the sound effect producing audio.
-// The last metadata we set — re-asserted whenever the active <audio> element
-// changes (sound handoffs/hijacks), because macOS ties the Now Playing widget
-// to the active element and drops the metadata when a different one takes over.
-let lastMediaMetadataInit: MediaMetadataInit | null = null;
-let metadataReassertTimer: number | null = null;
-
-function reassertMediaMetadata() {
-  if (!('mediaSession' in navigator) || !lastMediaMetadataInit) return;
-  // Deferred (and deduped): WebKit refreshes its Now Playing info right after
-  // media element events — metadata assigned synchronously inside a
-  // 'play'/'playing'/'pause' handler gets clobbered by that refresh.
-  if (metadataReassertTimer !== null) clearTimeout(metadataReassertTimer);
-  metadataReassertTimer = setTimeout(() => {
-    metadataReassertTimer = null;
-    if (lastMediaMetadataInit) {
-      navigator.mediaSession.metadata = new MediaMetadata(lastMediaMetadataInit);
-    }
-  }, 150);
-}
-
 function reRegisterMediaSessionHandlers() {
   if (!('mediaSession' in navigator) || !core) return;
   navigator.mediaSession.playbackState = 'playing';
   registerMediaSessionHandlers();
-  reassertMediaMetadata();
   // iOS picks up the sound effect's duration as "now playing" — clear it.
   try { navigator.mediaSession.setPositionState({}); } catch (_) {}
 }
@@ -422,7 +401,6 @@ function reassertPlaybackState() {
   const s = core.getState();
   if (s === 'playing' || s === 'loading' || s === 'retrying' || s === 'error' || s === 'recovering') {
     navigator.mediaSession.playbackState = 'playing';
-    reassertMediaMetadata();
     try { navigator.mediaSession.setPositionState({}); } catch (_) {}
   }
 }
@@ -497,15 +475,11 @@ const updateMediaSession = (newState: RadioState) => {
   const displayText = isIdle ? idleText : isLoading ? LABELS.loading : hasError ? LABELS.error : title;
 
   if ('mediaSession' in navigator) {
-    lastMediaMetadataInit = {
+    navigator.mediaSession.metadata = new MediaMetadata({
       title: isLoading ? `${LABELS.loading}${title}` : hasError ? `${LABELS.error} la încărcarea ${title}` : isIdle ? idleText : title,
       artist: `${LABELS.appName}${isIdle && !hasRestoredStation ? '' : ` | ${title}`}`,
-      // The OS fetches the artwork itself (bypassing our SW cache) — offline,
-      // a failing artwork fetch can take the whole Now Playing entry with it.
-      // Better a title without an image than neither.
-      artwork: navigator.onLine ? [{ src: cloudinaryImageUrl(displayText, isLive) }] : []
-    };
-    navigator.mediaSession.metadata = new MediaMetadata(lastMediaMetadataInit);
+      artwork: [{ src: cloudinaryImageUrl(displayText, isLive) }]
+    });
 
     // Re-register ALL action handlers on every state transition.
     // iOS resets them when a different <audio> element (loading/error sound)
@@ -617,14 +591,7 @@ player.addEventListener('pause', () => {
     }
   }
   core.onPlayerPause();
-  // The main element pausing (or dying entirely on stream failure) triggers
-  // WebKit's own Now Playing refresh — put our metadata back after it.
-  reassertMediaMetadata();
 });
-
-// WebKit also refreshes Now Playing when the main element's source is
-// cleared (stopRadio / offline error path sets src='').
-player.addEventListener('emptied', () => reassertMediaMetadata());
 
 // Stream failure during playback (lost WiFi, server died, etc.)
 // Silent failures (no 'error' event, audio just stops — common on HLS and
