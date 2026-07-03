@@ -365,10 +365,22 @@ function registerMediaSessionHandlers() {
 // the lock-screen shows prev/next instead of skip ±10 s.
 // Also force playbackState='playing' so macOS doesn't briefly show "Not Playing"
 // in the gap between pausing the main player and the sound effect producing audio.
+// The last metadata we set — re-asserted whenever the active <audio> element
+// changes (sound handoffs/hijacks), because macOS ties the Now Playing widget
+// to the active element and drops the metadata when a different one takes over.
+let lastMediaMetadataInit: MediaMetadataInit | null = null;
+
+function reassertMediaMetadata() {
+  if (lastMediaMetadataInit) {
+    navigator.mediaSession.metadata = new MediaMetadata(lastMediaMetadataInit);
+  }
+}
+
 function reRegisterMediaSessionHandlers() {
   if (!('mediaSession' in navigator) || !core) return;
   navigator.mediaSession.playbackState = 'playing';
   registerMediaSessionHandlers();
+  reassertMediaMetadata();
   // iOS picks up the sound effect's duration as "now playing" — clear it.
   try { navigator.mediaSession.setPositionState({}); } catch (_) {}
 }
@@ -401,6 +413,7 @@ function reassertPlaybackState() {
   const s = core.getState();
   if (s === 'playing' || s === 'loading' || s === 'retrying' || s === 'error' || s === 'recovering') {
     navigator.mediaSession.playbackState = 'playing';
+    reassertMediaMetadata();
     try { navigator.mediaSession.setPositionState({}); } catch (_) {}
   }
 }
@@ -475,11 +488,12 @@ const updateMediaSession = (newState: RadioState) => {
   const displayText = isIdle ? idleText : isLoading ? LABELS.loading : hasError ? LABELS.error : title;
 
   if ('mediaSession' in navigator) {
-    navigator.mediaSession.metadata = new MediaMetadata({
+    lastMediaMetadataInit = {
       title: isLoading ? `${LABELS.loading}${title}` : hasError ? `${LABELS.error} la încărcarea ${title}` : isIdle ? idleText : title,
       artist: `${LABELS.appName}${isIdle && !hasRestoredStation ? '' : ` | ${title}`}`,
       artwork: [{ src: cloudinaryImageUrl(displayText, isLive) }]
-    });
+    };
+    navigator.mediaSession.metadata = new MediaMetadata(lastMediaMetadataInit);
 
     // Re-register ALL action handlers on every state transition.
     // iOS resets them when a different <audio> element (loading/error sound)
