@@ -820,3 +820,68 @@ test.describe('Sound cache versioning', () => {
     });
   });
 });
+
+// The user's core promise: once they pressed play, the app must never sit in
+// silence. If the network dies mid-playback the OS pauses the dead stream
+// element — the app must treat that as a failure (audible loading → error),
+// NOT as the user pressing pause.
+test.describe('Offline mid-playback — always audible', () => {
+
+  test('going offline while playing keeps a sound on and recovers by itself', async ({ page }) => {
+    test.setTimeout(60_000);
+    const c = ui(page);
+
+    let connectionDown = false;
+    await page.route(STREAM_URL_RE, async (route) => {
+      if (connectionDown) {
+        await route.abort('internetdisconnected');
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'audio/mpeg', path: 'src/public/sounds/test-tone.mp3' });
+    });
+
+    await page.goto('/');
+    await waitForSoundBlobs(page);
+
+    await c.playButton.click();
+    await expect(c.pauseButton).toBeVisible({ timeout: 8000 });
+
+    // The connection drops, and — like on a phone — the OS pauses the dead
+    // stream element. (Calling pause() on the element IS the OS behaviour;
+    // same environment-simulation approach as the 'stalled' test above.)
+    connectionDown = true;
+    await page.context().setOffline(true);
+    await page.locator('#player').evaluate((el) => el.pause());
+
+    // NOT the paused UI: the app announces the problem (audible retry runs
+    // first, then the offline retry lands in error) instead of going mute
+    await expect(c.errorMsg).toBeVisible({ timeout: 10000 });
+    await expect(c.playButton).toBeHidden();
+    await expectSoundPlaying(page, 'errorNoise');
+
+    // The network comes back — the radio recovers with no click
+    connectionDown = false;
+    await page.context().setOffline(false);
+    await expect(c.pauseButton).toBeVisible({ timeout: 45000 });
+  });
+
+  test('pausing on purpose stays paused — even if the app is offline', async ({ page }) => {
+    test.setTimeout(60_000);
+    const c = ui(page);
+    await mockStreams(page);
+
+    await page.goto('/');
+    await c.playButton.click();
+    await expect(c.pauseButton).toBeVisible({ timeout: 8000 });
+
+    await c.pauseButton.click();
+    await page.context().setOffline(true);
+
+    // A deliberate pause is respected: play control shows, no error, no sounds
+    await expect(c.playButton).toBeVisible();
+    await page.waitForTimeout(4000); // enough for any misfired retry to surface
+    await expect(c.playButton).toBeVisible();
+    await expect(c.errorMsg).toBeHidden();
+    await expect(c.loadingMsg).toBeHidden();
+  });
+});
