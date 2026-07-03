@@ -131,9 +131,19 @@ neatinse si verzi. Comportamentul e specificat executabil in describe-ul e2e
 Nota pentru Faza 4 (XState): aceste comportamente (intentie pauza, supervisor,
 cap eroare) se porteaza ca events/guards/actori — testele raman dovada.
 
-## Faza 2: TypeScript
+## Faza 2: TypeScript [gata]
 
 Obiectiv: type safety pe contractul core <-> DOM, fara nicio schimbare de logica.
+
+Note de implementare (branch `faza2-typescript`):
+- Importuri fara extensie (`./radioCore`) — compatibile si cu tsc si cu Vite.
+- `script.ts` foloseste un helper `el<T>(id)` care arunca la id lipsa — markup-ul
+  e al nostru, deci null-check-uri pe fiecare utilizare ar fi zgomot.
+- `core` e declarat cu definite assignment (`let core!: RadioCore`) — e atribuit
+  imediat sub declaratie, iar fereastra initiala e acoperita de guard-uri runtime.
+- Testul care da `undefined` din `playerPlay()` pastreaza incalcarea de contract
+  intentionat (cast explicit) — verifica robustetea runtime a lui resumePlayer.
+- Typecheck rulat in CI inainte de unit tests, cu log in summary + gate final.
 
 - `tsconfig.json` cu `strict: true`, `noEmit` (Vite face transpilarea, `tsc` doar
   verifica). Instalam `typescript`.

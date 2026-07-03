@@ -8,23 +8,26 @@ import {
   SOUND_SUPERVISOR_INTERVAL_MS,
   ERROR_SOUND_AUDIBLE_MS,
   USER_PAUSE_INTENT_MS,
-} from './radioCore.js';
+  type RadioDeps,
+} from './radioCore';
 
 // --- Helpers ---
 
-function makeDeps(overrides = {}) {
+type PendingTimer = { fn: () => void; ms: number };
+
+function makeDeps(overrides: Partial<RadioDeps> = {}) {
   const calls = {
-    showButton: [],
-    loadingSound: [],
-    errorSound: [],
-    loadingMsg: [],
-    errorMsg: [],
-    mediaSession: [],
-    playerPlay: [],
-    playerPause: [],
-    playerSetSrc: [],
-    playerLoad: [],
-    savedIndex: [],
+    showButton: [] as string[],
+    loadingSound: [] as string[],
+    errorSound: [] as string[],
+    loadingMsg: [] as boolean[],
+    errorMsg: [] as boolean[],
+    mediaSession: [] as string[],
+    playerPlay: [] as string[],
+    playerPause: [] as string[],
+    playerSetSrc: [] as string[],
+    playerLoad: [] as string[],
+    savedIndex: [] as number[],
     selectedIndex: 0,
     paused: true,
     now: 0,
@@ -32,20 +35,23 @@ function makeDeps(overrides = {}) {
   };
 
   // By default playerPlay resolves (stream connects instantly)
-  let playerPlayResult = Promise.resolve();
+  let playerPlayResult: Promise<void> = Promise.resolve();
+
+  const _pendingTimers = new Map<number, PendingTimer>();
+  const _pendingIntervals = new Map<number, PendingTimer>();
 
   const deps = {
-    getStationUrl: (i) => `http://stream${i}.mp3`,
+    getStationUrl: (i: number) => `http://stream${i}.mp3`,
     getStationCount: () => 5,
     getSelectedIndex: () => calls.selectedIndex,
-    setSelectedIndex: (i) => { calls.selectedIndex = i; },
+    setSelectedIndex: (i: number) => { calls.selectedIndex = i; },
     playerPlay: () => {
       calls.playerPlay.push('play');
       calls.paused = false;
       return playerPlayResult;
     },
     playerPause: () => { calls.playerPause.push('pause'); calls.paused = true; },
-    playerSetSrc: (url) => { calls.playerSetSrc.push(url); },
+    playerSetSrc: (url: string) => { calls.playerSetSrc.push(url); },
     playerLoad: () => { calls.playerLoad.push('load'); },
     playerIsPaused: () => calls.paused,
     playerCurrentTime: () => calls.currentTime,
@@ -61,31 +67,31 @@ function makeDeps(overrides = {}) {
       ensure: () => calls.errorSound.push('ensure'),
       mute: () => calls.errorSound.push('mute'),
     },
-    showButton: (which) => calls.showButton.push(which),
-    setLoadingMsg: (v) => calls.loadingMsg.push(v),
-    setErrorMsg: (v) => calls.errorMsg.push(v),
-    updateMediaSession: (s) => calls.mediaSession.push(s),
-    saveLastIndex: (i) => calls.savedIndex.push(i),
-    setTimeout: vi.fn((fn, ms) => {
+    showButton: (which: string) => calls.showButton.push(which),
+    setLoadingMsg: (v: boolean) => calls.loadingMsg.push(v),
+    setErrorMsg: (v: boolean) => calls.errorMsg.push(v),
+    updateMediaSession: (s: string) => calls.mediaSession.push(s),
+    saveLastIndex: (i: number) => calls.savedIndex.push(i),
+    setTimeout: vi.fn((fn: () => void, ms: number) => {
       const id = Math.random();
-      deps._pendingTimers.set(id, { fn, ms });
+      _pendingTimers.set(id, { fn, ms });
       return id;
     }),
-    clearTimeout: vi.fn((id) => {
-      deps._pendingTimers.delete(id);
+    clearTimeout: vi.fn((id: number | null) => {
+      if (id !== null) _pendingTimers.delete(id);
     }),
-    setInterval: vi.fn((fn, ms) => {
+    setInterval: vi.fn((fn: () => void, ms: number) => {
       const id = Math.random();
-      deps._pendingIntervals.set(id, { fn, ms });
+      _pendingIntervals.set(id, { fn, ms });
       return id;
     }),
-    clearInterval: vi.fn((id) => {
-      deps._pendingIntervals.delete(id);
+    clearInterval: vi.fn((id: number | null) => {
+      if (id !== null) _pendingIntervals.delete(id);
     }),
-    _pendingTimers: new Map(),
-    _pendingIntervals: new Map(),
+    _pendingTimers,
+    _pendingIntervals,
     // test helpers
-    _setPlayerPlayResult: (p) => { playerPlayResult = p; },
+    _setPlayerPlayResult: (p: Promise<void>) => { playerPlayResult = p; },
     performanceNow: () => calls.now,
     isOnline: () => true,
     ...overrides,
@@ -94,11 +100,13 @@ function makeDeps(overrides = {}) {
   return { deps, calls };
 }
 
+type TestDeps = ReturnType<typeof makeDeps>['deps'];
+
 function flushPromises() {
   return new Promise(resolve => setTimeout(resolve, 0));
 }
 
-function fireTimer(deps, delayMs) {
+function fireTimer(deps: TestDeps, delayMs: number) {
   for (const [id, timer] of deps._pendingTimers) {
     if (timer.ms === delayMs) {
       deps._pendingTimers.delete(id);
@@ -109,7 +117,7 @@ function fireTimer(deps, delayMs) {
   return false;
 }
 
-function tickWatchdog(deps, times = 1) {
+function tickWatchdog(deps: TestDeps, times = 1) {
   for (let i = 0; i < times; i++) {
     for (const timer of deps._pendingIntervals.values()) {
       if (timer.ms === WATCHDOG_INTERVAL_MS) timer.fn();
@@ -426,7 +434,7 @@ describe('stopRadio', () => {
   it('invalidates pending callbacks (playId)', async () => {
     const { deps, calls } = makeDeps();
 
-    let resolvePlay;
+    let resolvePlay!: () => void;
     deps._setPlayerPlayResult(new Promise(r => { resolvePlay = r; }));
     const core = createRadioCore(deps);
 
@@ -569,7 +577,7 @@ describe('loading timeout', () => {
 describe('rapid station switching', () => {
   it('only the last playRadio call wins', async () => {
     const { deps, calls } = makeDeps();
-    let resolvers = [];
+    const resolvers: Array<() => void> = [];
     deps.playerPlay = () => {
       calls.playerPlay.push('play');
       return new Promise(r => resolvers.push(r));
@@ -684,7 +692,7 @@ describe('resume failures', () => {
   it('resumeRadio keeps paused when playerPlay rejects', async () => {
     const { deps, calls } = makeDeps();
     const core = createRadioCore(deps);
-    let rejectResume;
+    let rejectResume!: (reason?: unknown) => void;
 
     core.playRadio(0);
     await flushPromises();
@@ -706,7 +714,7 @@ describe('resume failures', () => {
   it('togglePlayPause keeps paused when resume rejects', async () => {
     const { deps, calls } = makeDeps();
     const core = createRadioCore(deps);
-    let rejectResume;
+    let rejectResume!: (reason?: unknown) => void;
 
     core.playRadio(0);
     await flushPromises();
@@ -728,7 +736,7 @@ describe('resume failures', () => {
   it('onPlayButtonClick keeps paused when resume rejects', async () => {
     const { deps, calls } = makeDeps();
     const core = createRadioCore(deps);
-    let rejectResume;
+    let rejectResume!: (reason?: unknown) => void;
 
     core.playRadio(0);
     await flushPromises();
@@ -755,14 +763,16 @@ describe('resume failures', () => {
     core.onPlayerPause();
     expect(core.getState()).toBe('paused');
 
-    deps._setPlayerPlayResult(undefined);
+    // Deliberate contract violation: some browsers' play() can return
+    // undefined — resumePlayer must survive a non-promise at runtime.
+    deps._setPlayerPlayResult(undefined as unknown as Promise<void>);
     await core.resumeRadio();
 
     expect(core.getState()).toBe('paused');
   });
 
   it('resumeRadio keeps paused when playerPlay throws synchronously', async () => {
-    let callsRef;
+    let callsRef!: ReturnType<typeof makeDeps>['calls'];
     let playCalls = 0;
     const { deps, calls } = makeDeps({
       playerPlay: () => {
@@ -1133,7 +1143,7 @@ describe('playback watchdog', () => {
 // (the network dying must never leave the app in silent 'paused')
 // =============================================
 
-function tickSupervisor(deps, times = 1) {
+function tickSupervisor(deps: TestDeps, times = 1) {
   for (let i = 0; i < times; i++) {
     for (const timer of deps._pendingIntervals.values()) {
       if (timer.ms === SOUND_SUPERVISOR_INTERVAL_MS) timer.fn();
