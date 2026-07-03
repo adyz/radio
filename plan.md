@@ -277,6 +277,22 @@ cu paritate 100% de comportament.
   ramana testabil fara browser. `radioCore.ts` devine un adaptor subtire:
   acelasi API public (`playRadio`, `stopRadio`, `togglePlayPause`, `onPlayerPause`
   etc.) tradus in events -> `main.ts` si celelalte module nu se ating.
+- Redesign `audioInstance` (soundEffects.ts) — punctul cel mai slab actual:
+  - `isPlaying` e INTENTIE, nu realitate (adevarul e in element: paused,
+    rejected play); ensure() re-impaca periodic cele doua = eventual
+    consistency. warmUp() se bazeaza pe curse cu playGeneration. Netestat
+    direct, desi are cea mai delicata logica async din stratul DOM.
+  - Modelul corect: instanta tine o singura stare de dorinta
+    (`desired: 'playing' | 'stopped'`), elementul e singura sursa de realitate,
+    si UN reconcile() le aliniaza — play/stop/ensure devin declansatoare.
+    Testabil unit cu un element fals injectat.
+  - Se leaga natural de ideea "canal de feedback": `tone: 'loading'|'error'|
+    'none'` in STATE_FX + un singur element <audio> real (NU Web Audio — vezi
+    episodul handoff si 69a58f2) — overlap imposibil prin constructie, iar
+    schimbarea de ton = swap de src pe elementul care deja canta (continuarea
+    permisa de iOS in background). Rezolva si lock screen-ul iOS, curat.
+  - Orice schimbare aici cere re-validare completa pe device (lock screen,
+    prev/next, offline) — zona cea mai empirica a aplicatiei.
 - Capcane cunoscute de tratat explicit (comportament calit in productie):
   - ordinea `setState('loading')` INAINTE de `playerPause()` (nativul 'pause' e
     ignorat in loading/retrying — vezi comentariul din radioCore si logica din
