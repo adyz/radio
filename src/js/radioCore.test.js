@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createRadioCore, MAX_RECOVERY_ATTEMPTS, RECOVERY_DELAY_MS } from './radioCore.js';
+import {
+  createRadioCore,
+  RECOVERY_DELAY_MS,
+  RECOVERY_DELAY_MAX_MS,
+  WATCHDOG_INTERVAL_MS,
+  WATCHDOG_STALL_TICKS,
+} from './radioCore.js';
 
 // --- Helpers ---
 
@@ -19,6 +25,7 @@ function makeDeps(overrides = {}) {
     selectedIndex: 0,
     paused: true,
     now: 0,
+    currentTime: 0,
   };
 
   // By default playerPlay resolves (stream connects instantly)
@@ -38,6 +45,7 @@ function makeDeps(overrides = {}) {
     playerSetSrc: (url) => { calls.playerSetSrc.push(url); },
     playerLoad: () => { calls.playerLoad.push('load'); },
     playerIsPaused: () => calls.paused,
+    playerCurrentTime: () => calls.currentTime,
     loadingSound: {
       play: () => calls.loadingSound.push('play'),
       stop: () => calls.loadingSound.push('stop'),
@@ -59,7 +67,16 @@ function makeDeps(overrides = {}) {
     clearTimeout: vi.fn((id) => {
       deps._pendingTimers.delete(id);
     }),
+    setInterval: vi.fn((fn, ms) => {
+      const id = Math.random();
+      deps._pendingIntervals.set(id, { fn, ms });
+      return id;
+    }),
+    clearInterval: vi.fn((id) => {
+      deps._pendingIntervals.delete(id);
+    }),
     _pendingTimers: new Map(),
+    _pendingIntervals: new Map(),
     // test helpers
     _setPlayerPlayResult: (p) => { playerPlayResult = p; },
     performanceNow: () => calls.now,
@@ -83,6 +100,14 @@ function fireTimer(deps, delayMs) {
     }
   }
   return false;
+}
+
+function tickWatchdog(deps, times = 1) {
+  for (let i = 0; i < times; i++) {
+    for (const timer of deps._pendingIntervals.values()) {
+      if (timer.ms === WATCHDOG_INTERVAL_MS) timer.fn();
+    }
+  }
 }
 
 // =============================================
@@ -804,11 +829,11 @@ describe('restart after long pause', () => {
 });
 
 // =============================================
-// MAX RECOVERY ATTEMPTS
+// RECOVERY — exponential backoff, never gives up
 // =============================================
 
-describe('max recovery attempts', () => {
-  it('stops scheduling recovery after MAX_RECOVERY_ATTEMPTS', async () => {
+describe('recovery backoff', () => {
+  it('keeps scheduling recovery forever, with exponential backoff capped at RECOVERY_DELAY_MAX_MS', async () => {
     const { deps } = makeDeps();
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
     const core = createRadioCore(deps);
@@ -820,18 +845,23 @@ describe('max recovery attempts', () => {
     await flushPromises(); // → error
     expect(core.getState()).toBe('error');
 
-    // Exhaust all recovery attempts
-    for (let i = 0; i < MAX_RECOVERY_ATTEMPTS; i++) {
-      fireTimer(deps, RECOVERY_DELAY_MS); // scheduleRecovery fires retryFromError
-      await flushPromises(); // recovery .catch → error + scheduleRecovery
+    // Each failed recovery doubles the delay, capped at the max
+    const expectedDelays = [
+      RECOVERY_DELAY_MS,      // 10s
+      RECOVERY_DELAY_MS * 2,  // 20s
+      RECOVERY_DELAY_MS * 4,  // 40s
+      RECOVERY_DELAY_MAX_MS,  // capped at 60s
+      RECOVERY_DELAY_MAX_MS,  // stays capped
+    ];
+    for (const delay of expectedDelays) {
+      expect([...deps._pendingTimers.values()].some(t => t.ms === delay)).toBe(true);
+      fireTimer(deps, delay); // retryFromError → recovering
+      await flushPromises();  // fails → error + reschedule
+      expect(core.getState()).toBe('error');
     }
 
-    expect(core.getState()).toBe('error');
-    expect(core._getRecoveryCount()).toBe(MAX_RECOVERY_ATTEMPTS);
-
-    // No more timers should be pending for recovery
-    const hasRecoveryTimer = [...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS);
-    expect(hasRecoveryTimer).toBe(false);
+    // Recovery never gives up — there is always a next attempt scheduled
+    expect([...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MAX_MS)).toBe(true);
   });
 
   it('resets recovery count on successful playRadio', async () => {
@@ -884,17 +914,17 @@ describe('max recovery attempts', () => {
     await flushPromises();
     expect(core.getState()).toBe('error');
 
-    // Do a few failed recoveries
+    // Do a few failed recoveries (backoff: 10s, then 20s)
     fireTimer(deps, RECOVERY_DELAY_MS);
     await flushPromises();
-    fireTimer(deps, RECOVERY_DELAY_MS);
+    fireTimer(deps, RECOVERY_DELAY_MS * 2);
     await flushPromises();
     // count=3: initial scheduleRecovery(1) + two failed retryFromError re-schedules(2,3)
     expect(core._getRecoveryCount()).toBe(3);
 
     // Now make recovery succeed
     deps._setPlayerPlayResult(Promise.resolve());
-    fireTimer(deps, RECOVERY_DELAY_MS);
+    fireTimer(deps, RECOVERY_DELAY_MS * 4);
     await flushPromises();
 
     expect(core.getState()).toBe('playing');
@@ -920,7 +950,8 @@ describe('max recovery attempts', () => {
 
     expect(core.getState()).toBe('error');
     expect(calls.playerSetSrc.at(-1)).toBe('');
-    expect([...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS)).toBe(true);
+    // Second failed attempt → backoff doubles to 20s
+    expect([...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS * 2)).toBe(true);
   });
 
   it('offline recovery reschedules without attempting stream', async () => {
@@ -977,9 +1008,9 @@ describe('max recovery attempts', () => {
     expect(core._getRecoveryCount()).toBe(0);
   });
 
-  it('offline recovery loops are also bounded by MAX_RECOVERY_ATTEMPTS', async () => {
+  it('offline recovery keeps re-checking indefinitely (no dead end)', async () => {
     let online = true;
-    const { deps } = makeDeps({ isOnline: () => online });
+    const { deps, calls } = makeDeps({ isOnline: () => online });
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
     const core = createRadioCore(deps);
 
@@ -990,18 +1021,105 @@ describe('max recovery attempts', () => {
     await flushPromises();
     expect(core.getState()).toBe('error');
 
-    // Go offline and exhaust all recovery attempts
+    // Stay offline for a long time — far beyond the old 30-attempt cap
     online = false;
-    for (let i = 0; i < MAX_RECOVERY_ATTEMPTS; i++) {
+    const playsBefore = calls.playerPlay.length;
+    for (let i = 0; i < 100; i++) {
       fireTimer(deps, RECOVERY_DELAY_MS);
       await flushPromises();
     }
 
+    // Still waiting patiently: no stream attempts, but always a next check
     expect(core.getState()).toBe('error');
-    expect(core._getRecoveryCount()).toBe(MAX_RECOVERY_ATTEMPTS);
+    expect(calls.playerPlay.length).toBe(playsBefore);
+    expect([...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS)).toBe(true);
 
-    // No more recovery timers — loop is capped even while offline
-    const hasRecoveryTimer = [...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS);
-    expect(hasRecoveryTimer).toBe(false);
+    // Net comes back — the very next check recovers playback on its own
+    online = true;
+    deps._setPlayerPlayResult(Promise.resolve());
+    fireTimer(deps, RECOVERY_DELAY_MS);
+    await flushPromises();
+    expect(core.getState()).toBe('playing');
+  });
+});
+
+// =============================================
+// PLAYBACK WATCHDOG (silent stalls — HLS, flaky wifi)
+// =============================================
+
+describe('playback watchdog', () => {
+  it('does nothing while playback progresses', async () => {
+    const { deps, calls } = makeDeps();
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    expect(core.getState()).toBe('playing');
+
+    for (let i = 0; i < 10; i++) {
+      calls.currentTime += 2;
+      tickWatchdog(deps);
+    }
+    expect(core.getState()).toBe('playing');
+  });
+
+  it('restarts the stream when playback time freezes', async () => {
+    const { deps, calls } = makeDeps();
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    expect(core.getState()).toBe('playing');
+
+    // Some healthy progress first
+    calls.currentTime = 5;
+    tickWatchdog(deps);
+
+    // currentTime freezes: after WATCHDOG_STALL_TICKS frozen ticks → retry
+    tickWatchdog(deps, WATCHDOG_STALL_TICKS);
+    expect(core.getState()).toBe('retrying');
+
+    // The normal retry cycle then recovers playback
+    fireTimer(deps, 3000);
+    await flushPromises();
+    expect(core.getState()).toBe('playing');
+  });
+
+  it('a moment of progress resets the stall countdown', async () => {
+    const { deps, calls } = makeDeps();
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+
+    calls.currentTime = 5;
+    tickWatchdog(deps);
+    tickWatchdog(deps, WATCHDOG_STALL_TICKS - 1); // almost stalled…
+    calls.currentTime = 6;                        // …but it moves again
+    tickWatchdog(deps);
+    tickWatchdog(deps, WATCHDOG_STALL_TICKS - 1); // frozen again, not enough
+    expect(core.getState()).toBe('playing');
+
+    tickWatchdog(deps); // one more frozen tick crosses the threshold
+    expect(core.getState()).toBe('retrying');
+  });
+
+  it('stops watching when paused or stopped', async () => {
+    const { deps } = makeDeps();
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    expect(deps._pendingIntervals.size).toBe(1);
+
+    core.onPlayerPause();
+    expect(core.getState()).toBe('paused');
+    expect(deps._pendingIntervals.size).toBe(0);
+
+    core.onPlayerPlay();
+    expect(deps._pendingIntervals.size).toBe(1);
+
+    core.stopRadio();
+    expect(deps._pendingIntervals.size).toBe(0);
   });
 });

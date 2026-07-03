@@ -78,9 +78,38 @@ index.html          ← UI (butoane, poster, selector)
 
 ---
 
+## Recovery și offline
+
+Problema clasică pe net intermitent: stream-ul moare **fără niciun eveniment** (`error`/`stalled` nu se emit, mai ales pe HLS) și aplicația rămâne blocată — fie „cântă" liniște, fie stă în error pentru totdeauna. Soluția are trei piese, toate în `radioCore.js`:
+
+### 1. Watchdog pe progresul redării
+
+Singurul semnal de încredere e progresul efectiv: cât timp starea e `playing`, `player.currentTime` trebuie să avanseze. Un interval (`WATCHDOG_INTERVAL_MS` = 2s) compară valoarea; după `WATCHDOG_STALL_TICKS` (3) tick-uri înghețate consecutive (≈6s) → ciclul normal de retry/recovery. Zero falsuri pozitive pe HLS (currentTime avansează din buffer și între fetch-uri de segmente).
+
+> De ce nu evenimentul `stalled`? Browserele îl emit **și în timpul redării normale de HLS** (pauzele dintre segmente arată ca „stalled"), ceea ce producea flash-uri false de „Se încarcă..."; iar la înghețuri reale de multe ori nu se emite deloc. A fost eliminat complet.
+
+### 2. Recovery-ul nu renunță niciodată
+
+Backoff exponențial: 10s → 20s → 40s → plafonat la `RECOVERY_DELAY_MAX_MS` (60s), la infinit. (Vechiul plafon de 30 de încercări lăsa aplicația moartă în error după ~5 minute de net căzut — fatal pe net intermitent, unde `navigator.onLine` rămâne `true` și evenimentul `online` nu vine niciodată.)
+
+### 3. Offline explicit vs. „minciuna" lui `navigator.onLine`
+
+- `onLine === false` e de încredere → re-verificare fixă la 10s, fără să atingă rețeaua și fără escaladare de backoff; evenimentul `online` declanșează retry instant.
+- `onLine === true` poate fi fals pozitiv (WiFi fără internet) → se încearcă mereu; încercarea stream-ului e cea mai onestă probă de conectivitate.
+
+### Known issue: playerul HLS nativ din Chromium spamează request-uri
+
+Măsurat (iulie 2026, Chromium 145/149): un `<audio>` cu `.m3u8` atașat căruia îi tai rețeaua intră într-o buclă internă de retry pe playlist de **~4.700 req/s** (239k de request-uri în 60s), fără să emită vreun `error` și fără să se oprească singur. E comportament Chromium, nu al aplicației.
+
+- Aplicația **îl conține** în scenariul offline: watchdog → error → `playerSetSrc('')` detașează playerul și oprește spin-ul (măsurat: 2 request-uri în 45s de offline).
+- Net **lent** (nu tăiat) nu declanșează problema (măsurat: ~15 req/min la 30KB/s).
+- Fereastră rămasă: la reconectare, rar (1 din 3 în măsurători), spin-ul poate porni **în timp ce redarea merge normal** — caz invizibil pentru watchdog. Decizie: fără workaround deocamdată; opțiuni documentate — detector de spin cu `PerformanceObserver` pe resurse, sau hls.js lazy-load pe non-Safari.
+
+---
+
 ## Teste
 
-### Unit tests — `radioCore.test.js` (49 teste, Vitest)
+### Unit tests — `radioCore.test.js` (53 de teste, Vitest)
 
 Testează logica pură din `radioCore.js` **fără browser**. Toate dependențele (player, timere, DOM) sunt mock-uite manual prin `makeDeps()`.
 
@@ -109,10 +138,14 @@ Notă: dacă sumarul text afișează numere de linii lângă un fișier care are
 | **retrying keeps loading sound** | `keep` din `STATE_FX` | La `loading → retrying`, sunetul de loading continuă |
 | **togglePlayPause** | Un singur buton play/pause | Din `idle` pornește, din `playing` pauzează |
 | **restart after long pause** | Pauză > 2s → restart stream | Stream-urile radio nu bufferează, re-play după pauză lungă |
+| **recovery backoff** | Backoff exponențial fără plafon | 10s → 20s → 40s → 60s cap, mereu o încercare programată; offline: re-check fix la 10s |
+| **playback watchdog** | `currentTime` înghețat ≈6s → retry | Stall silențios detectat fără evenimente; progresul resetează numărătoarea; se oprește la pause/stop |
 
-### E2E tests — `e2e/radio.spec.js` (23 teste, Playwright)
+### E2E tests — `e2e/radio.spec.js` (35 de teste, Playwright)
 
-Testează aplicația completă în Chromium real. Stream-urile radio sunt interceptate și servite local (`test-tone.mp3`).
+Testează aplicația completă în Chromium real. Stream-urile radio sunt interceptate și servite local (`test-tone.mp3`, plus un playlist HLS mock cu segmente `.ts` reale pentru stația FIP — Chromium redă `.m3u8` nativ).
+
+**Principiu: testele văd ce vede utilizatorul.** Toate interacțiunile trec prin roluri accesibile (`getByRole`, helper-ul `ui()`), iar asertările se fac pe text vizibil, titlul paginii (numele stației + ⏳/🔴/❤️‍🩹) și starea butoanelor — niciodată pe id-uri, clase CSS sau stare internă. Excepțiile white-box (ex. versionarea cache-ului de sunete) sunt marcate și justificate în comentarii.
 
 ```bash
 npm run test:e2e  # playwright test
@@ -121,22 +154,24 @@ npm run test:e2e  # playwright test
 | Grup | Test | Ce verifică |
 |---|---|---|
 | **Page load** | page loads with correct title and idle state | Title, play button vizibil, pause/stop ascunse |
-| | all radio station buttons are rendered in selector | 18 butoane în dropdown |
-| **Play/Pause/Stop** | clicking play starts loading, then plays | `loading → playing`, poster se schimbă |
+| | all radio station buttons are rendered in selector | 19 butoane în dropdown (`STATION_COUNT`) |
+| **Play/Pause/Stop** | clicking play starts playback | Pause vizibil, mesaj de loading ascuns, titlu 🔴 |
 | | clicking stop returns to idle | Stop → play button revine |
-| **Station switching** | clicking next changes station | Poster se schimbă la stație diferită |
-| | clicking prev wraps to last station from first | Prev din Kiss FM → Vanilla Radio Fresh |
-| **Selector UI** | selecting a station from dropdown starts playing | Click pe Europa FM → loading/playing |
+| **Station switching** | clicking next changes station | Titlul arată noua stație (Europa FM) |
+| | clicking prev wraps to last station from first | Prev din Kiss FM → FIP Radio France (ultima) |
+| **HLS** | a transient stall on the HLS station does not interrupt playback | `stalled` sintetic în timpul redării FIP → fără flash de loading/error |
+| | recovers by itself after the connection drops and comes back | Rețeaua cade → bufferul se scurge → îngheț silențios → watchdog → reconectare automată, fără click |
+| **Selector UI** | selecting a station from dropdown starts playing | Click pe Europa FM → playing, titlul confirmă |
 | | clicking outside closes the selector | Click pe body → dropdown se închide |
-| **Error state** | shows error state when stream fails | Stream abortat → error msg vizibil + stop button |
-| **Persistence** | saves and restores last played station | localStorage `lastRadioIndex` supraviețuiește reload |
-| **Loading msg** | loading message appears during stream connection | Text "Se încarcă... Kiss FM" vizibil |
+| **Error state** | shows error state when stream fails | Stream abortat → „Eroare la încărcarea…" vizibil + stop button |
+| **Persistence** | saves and restores last played station | După reload, titlul arată stația restaurată |
+| **Loading msg** | loading message appears during stream connection | Text „Se încarcă... Kiss FM" vizibil |
 | **Accessibility** | all control buttons have aria-labels | 6 butoane cu `aria-label` |
-| | page has a main landmark | `<main>` prezent |
-| **Offline — imagini** | all 3 status images are pre-cached on page load | Cache API conține idle + loading + error |
-| | error and idle images render offline via SW cache | Offline → error poster loaded (`naturalWidth > 0`) |
-| **Offline — sunete** | error sound plays offline from preloaded blob | Offline → error → `errorNoise.src` = `blob:`, nu e paused |
-| | loading sound plays from preloaded blob | Stream blocat → loading → `loadingNoise.src` = `blob:` |
+| | page has a main landmark | `main` prezent (rol landmark) |
+| **Offline — imagini** | all 3 status images are fetched on page load | Idle + loading + error descărcate pentru offline |
+| | error and idle images render offline via SW cache | Offline → poster randat (`naturalWidth > 0`) |
+| **Offline — sunete** | error sound plays while offline | Sunetul cântă, zero request-uri de rețea pentru sunete |
+| | loading sound plays while the next station is still connecting | Sunetul de loading cântă instant, fără rețea |
 
 ### Cum se leagă
 

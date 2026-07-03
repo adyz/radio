@@ -379,6 +379,7 @@ core = createRadioCore({
   playerSetSrc:     (url) => { player.src = url; },
   playerLoad:       () => player.load(),
   playerIsPaused:   () => player.paused,
+  playerCurrentTime: () => player.currentTime,
   loadingSound:     loadingNoiseInstance,
   errorSound:       errorNoiseInstance,
   showButton,
@@ -388,6 +389,8 @@ core = createRadioCore({
   saveLastIndex:    (i) => localStorage.setItem('lastRadioIndex', i),
   setTimeout,
   clearTimeout,
+  setInterval,
+  clearInterval,
   performanceNow:   () => performance.now(),
   isOnline:          () => navigator.onLine,
 });
@@ -455,22 +458,10 @@ player.addEventListener('pause', () => {
 });
 
 // Stream failure during playback (lost WiFi, server died, etc.)
+// Silent failures (no 'error' event, audio just stops — common on HLS and
+// flaky wifi) are caught by the core's playback-progress watchdog instead of
+// the unreliable 'stalled' event.
 player.addEventListener('error', () => core.onPlayerError());
-
-function isCurrentStreamHls() {
-  return /\.m3u8(?:[?#].*)?$/.test(player.currentSrc || player.src);
-}
-
-player.addEventListener('stalled', () => {
-  if (isCurrentStreamHls()) return;
-
-  const playIdAtStall = core._getPlayId();
-  const stalledTimeout = setTimeout(() => {
-    // Only treat as error if we're still on the same stream
-    if (core._getPlayId() === playIdAtStall && core.getState() === 'playing') core.onPlayerError();
-  }, 5000);
-  player.addEventListener('playing', () => clearTimeout(stalledTimeout), { once: true });
-});
 
 // Auto-recovery when network comes back
 window.addEventListener('online', () => core.retryFromError());
