@@ -10,7 +10,9 @@ import { createStateMachine } from './stateMachine.js';
 export const MAX_RETRIES = 1;
 export const LOADING_TIMEOUT_MS = 6000;
 export const RECOVERY_DELAY_MS = 10000;
-export const MAX_RECOVERY_ATTEMPTS = 30;
+export const RECOVERY_DELAY_MAX_MS = 60000;
+export const WATCHDOG_INTERVAL_MS = 2000;
+export const WATCHDOG_STALL_TICKS = 3; // ≈6s of frozen playback ⇒ stream is dead
 
 const STATE_FX = {
   idle:       { button: 'play',  loading: 'stop',  error: 'stop',  loadingMsg: false, errorMsg: false },
@@ -33,6 +35,7 @@ export function createRadioCore(deps) {
     playerSetSrc,
     playerLoad,
     playerIsPaused,
+    playerCurrentTime,
     loadingSound,
     errorSound,
     showButton,
@@ -42,11 +45,13 @@ export function createRadioCore(deps) {
     saveLastIndex,
     setTimeout: _setTimeout,
     clearTimeout: _clearTimeout,
+    setInterval: _setInterval,
+    clearInterval: _clearInterval,
     performanceNow,
     isOnline,
   } = deps;
 
-  const timers = { retry: null, loading: null, recovery: null };
+  const timers = { retry: null, loading: null, recovery: null, watchdog: null };
   let retryCount = 0;
   let recoveryCount = 0;
   let currentPlayId = 0;
@@ -61,6 +66,9 @@ export function createRadioCore(deps) {
     setLoadingMsg(fx.loadingMsg);
     setErrorMsg(fx.errorMsg);
     updateMediaSession(newState);
+    // The watchdog only makes sense while we're supposed to be playing
+    if (newState === 'playing') startWatchdog();
+    else stopWatchdog();
   });
 
   setState('idle');
@@ -239,14 +247,50 @@ export function createRadioCore(deps) {
     }
   }
 
-  // Schedule a silent recovery attempt after RECOVERY_DELAY_MS
+  // --- Playback watchdog ---
+  // Stream failures often don't fire any 'error'/'stalled' event — the audio
+  // just goes silent while currentTime stops advancing (classic with HLS or
+  // flaky wifi). The only reliable signal is playback progress itself: while
+  // state is 'playing', currentTime must keep moving.
+
+  let watchdogLastTime = null;
+  let watchdogStallTicks = 0;
+
+  function stopWatchdog() {
+    _clearInterval(timers.watchdog);
+    timers.watchdog = null;
+  }
+
+  function startWatchdog() {
+    stopWatchdog();
+    watchdogLastTime = null;
+    watchdogStallTicks = 0;
+    timers.watchdog = _setInterval(() => {
+      if (getState() !== 'playing') return;
+      const t = playerCurrentTime();
+      if (watchdogLastTime === null || t !== watchdogLastTime) {
+        watchdogLastTime = t;
+        watchdogStallTicks = 0;
+        return;
+      }
+      watchdogStallTicks++;
+      if (watchdogStallTicks >= WATCHDOG_STALL_TICKS) {
+        stopWatchdog();
+        handlePlayError(currentPlayId, getSelectedIndex(), new Error('Playback stalled'));
+      }
+    }, WATCHDOG_INTERVAL_MS);
+  }
+
+  // Schedule a silent recovery attempt with exponential backoff
+  // (10s → 20s → 40s → capped at RECOVERY_DELAY_MAX_MS), forever — a radio
+  // should never give up and strand the user in a dead error state.
   function scheduleRecovery() {
-    if (recoveryCount >= MAX_RECOVERY_ATTEMPTS) return;
     recoveryCount++;
+    const backoff = RECOVERY_DELAY_MS * 2 ** Math.min(recoveryCount - 1, 6);
     _clearTimeout(timers.recovery);
     timers.recovery = _setTimeout(() => {
       retryFromError();
-    }, RECOVERY_DELAY_MS);
+    }, Math.min(backoff, RECOVERY_DELAY_MAX_MS));
   }
 
   // Silent recovery: uses the state machine ('recovering' state).
@@ -255,9 +299,15 @@ export function createRadioCore(deps) {
     const s = getState();
     if (s !== 'error' && s !== 'recovering') return;
 
-    // No point trying without connectivity — wait for 'online' event
+    // Clearly offline (interface down) — re-check on a fixed cadence without
+    // escalating the backoff: nothing was attempted, and the 'online' event
+    // will trigger an immediate retry anyway. isOnline() can be a false
+    // positive (wifi without internet), so when it says true we always try.
     if (!isOnline()) {
-      scheduleRecovery();
+      _clearTimeout(timers.recovery);
+      timers.recovery = _setTimeout(() => {
+        retryFromError();
+      }, RECOVERY_DELAY_MS);
       return;
     }
 
