@@ -2,19 +2,18 @@
 // Bump APP_CACHE version when static files change to force re-cache.
 // Bump SOUND_CACHE version when sound files change.
 
-const APP_CACHE_NAME = 'radio-app-v1';
+const APP_CACHE_NAME = 'radio-app-v2';
 const CACHE_NAME = 'radio-images-v2';
 const SOUND_CACHE_NAME = 'radio-sounds-v1';
 const MAX_CACHED_IMAGES = 30;
 
-// App shell — everything needed to render the page offline
+// App shell — everything needed to render the page offline.
+// CSS is inlined into index.html at build time; all app JS is bundled
+// into js/script.js (stable, hash-free names — see vite.config.js).
 const APP_SHELL = [
   './',
   './index.html',
-  './css/output.css',
-  './js/script.js',
-  './js/radioCore.js',
-  './js/stateMachine.js',
+  './js/index.js',
   './js/keepAlive.js',
   './manifest.json',
   './images/favicon.png',

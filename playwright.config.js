@@ -9,7 +9,7 @@ export default defineConfig({
     headless: true,
   },
   webServer: {
-    command: 'npx live-server src --port=3210 --host=127.0.0.1 --no-browser',
+    command: 'npx vite --port 3210 --host 127.0.0.1 --strictPort',
     port: 3210,
     reuseExistingServer: !process.env.CI,
   },
