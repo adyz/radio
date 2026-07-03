@@ -5,6 +5,9 @@ import {
   RECOVERY_DELAY_MAX_MS,
   WATCHDOG_INTERVAL_MS,
   WATCHDOG_STALL_TICKS,
+  SOUND_SUPERVISOR_INTERVAL_MS,
+  ERROR_SOUND_AUDIBLE_MS,
+  USER_PAUSE_INTENT_MS,
 } from './radioCore.js';
 
 // --- Helpers ---
@@ -49,10 +52,14 @@ function makeDeps(overrides = {}) {
     loadingSound: {
       play: () => calls.loadingSound.push('play'),
       stop: () => calls.loadingSound.push('stop'),
+      ensure: () => calls.loadingSound.push('ensure'),
+      mute: () => calls.loadingSound.push('mute'),
     },
     errorSound: {
       play: () => calls.errorSound.push('play'),
       stop: () => calls.errorSound.push('stop'),
+      ensure: () => calls.errorSound.push('ensure'),
+      mute: () => calls.errorSound.push('mute'),
     },
     showButton: (which) => calls.showButton.push(which),
     setLoadingMsg: (v) => calls.loadingMsg.push(v),
@@ -598,12 +605,9 @@ describe('retrying keeps loading sound', () => {
 
     expect(core.getState()).toBe('retrying');
 
-    // Find the loading sound calls after setState('retrying')
-    // 'retrying' has loading: 'keep' — so no stop should happen for retrying specifically
-    // The last loading action from setState('loading') was 'play'
-    // setState('retrying') should NOT add 'stop'
+    // 'retrying' asserts the loading sound itself (loading: 'play') so a retry
+    // reached from a watchdog stall is audible too — never stopped, never silent.
     const loadingAfterRetry = calls.loadingSound.slice(-1)[0];
-    // Last action should still be 'play' (from the loading state, not stopped by retrying)
     expect(loadingAfterRetry).toBe('play');
   });
 });
@@ -1121,5 +1125,196 @@ describe('playback watchdog', () => {
 
     core.stopRadio();
     expect(deps._pendingIntervals.size).toBe(0);
+  });
+});
+
+// =============================================
+// ALWAYS AUDIBLE — system pause vs user pause
+// (the network dying must never leave the app in silent 'paused')
+// =============================================
+
+function tickSupervisor(deps, times = 1) {
+  for (let i = 0; i < times; i++) {
+    for (const timer of deps._pendingIntervals.values()) {
+      if (timer.ms === SOUND_SUPERVISOR_INTERVAL_MS) timer.fn();
+    }
+  }
+}
+
+describe('system pause vs user pause', () => {
+  it('a pause the user asked for stays paused, even offline', async () => {
+    let online = true;
+    const { deps, calls } = makeDeps({ isOnline: () => online });
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    expect(core.getState()).toBe('playing');
+
+    core.pauseRadio();       // user intent…
+    online = false;          // …even if the network dies at the same moment
+    core.onPlayerPause();    // native event triggered by our own pause()
+
+    expect(core.getState()).toBe('paused');
+  });
+
+  it('an unexpected native pause while offline goes to retrying with the loading sound', async () => {
+    let online = true;
+    const { deps, calls } = makeDeps({ isOnline: () => online });
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+
+    online = false;
+    core.onPlayerPause();    // OS killed the dead stream — nobody pressed pause
+
+    expect(core.getState()).toBe('retrying');
+    expect(calls.loadingSound.at(-1)).toBe('play');
+  });
+
+  it('the offline retry lands in error with the error sound and keeps recovering', async () => {
+    let online = true;
+    const { deps, calls } = makeDeps({ isOnline: () => online });
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+
+    online = false;
+    core.onPlayerPause();
+    expect(core.getState()).toBe('retrying');
+
+    fireTimer(deps, 3000);   // the scheduled retry runs while still offline
+    expect(core.getState()).toBe('error');
+    expect(calls.errorSound.at(-1)).toBe('play');
+    expect(calls.errorMsg.at(-1)).toBe(true);
+
+    // Silent recovery is scheduled — the radio never gives up
+    fireTimer(deps, RECOVERY_DELAY_MS);
+    expect(core.getState()).toBe('error'); // still offline: fixed-cadence recheck
+    expect([...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS)).toBe(true);
+  });
+
+  it('an unexpected native pause while online still pauses (interruption, unplugged headphones)', async () => {
+    const { deps } = makeDeps();
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+
+    core.onPlayerPause();    // no user intent, but the network is fine
+
+    expect(core.getState()).toBe('paused');
+  });
+
+  it('user pause intent expires after USER_PAUSE_INTENT_MS', async () => {
+    let online = true;
+    const { deps, calls } = makeDeps({ isOnline: () => online });
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+
+    core.pauseRadio();
+    calls.now += USER_PAUSE_INTENT_MS + 1000; // the native pause arrives much later
+    online = false;
+    core.onPlayerPause();
+
+    expect(core.getState()).toBe('retrying'); // stale intent no longer explains it
+  });
+});
+
+// =============================================
+// SOUND SUPERVISOR — something must always be audible
+// =============================================
+
+describe('sound supervisor', () => {
+  it('re-asserts the loading sound while loading', async () => {
+    const { deps, calls } = makeDeps();
+    deps._setPlayerPlayResult(new Promise(() => {})); // stream never connects
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    expect(core.getState()).toBe('loading');
+
+    tickSupervisor(deps);
+    expect(calls.loadingSound.at(-1)).toBe('ensure');
+  });
+
+  it('re-asserts the error sound while in error', async () => {
+    const { deps, calls } = makeDeps({ isOnline: () => false });
+    const core = createRadioCore(deps);
+
+    core.playRadio(0); // offline → straight to error
+    expect(core.getState()).toBe('error');
+
+    tickSupervisor(deps);
+    expect(calls.errorSound.at(-1)).toBe('ensure');
+  });
+
+  it('mutes the error sound after ERROR_SOUND_AUDIBLE_MS but recovery continues', async () => {
+    const { deps, calls } = makeDeps({ isOnline: () => false });
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    expect(core.getState()).toBe('error');
+
+    tickSupervisor(deps);
+    expect(calls.errorSound.at(-1)).toBe('ensure'); // audible within the first minute
+
+    calls.now += ERROR_SOUND_AUDIBLE_MS;
+    tickSupervisor(deps);
+    expect(calls.errorSound.at(-1)).toBe('mute');   // silent afterwards…
+
+    // …while the silent recovery timer is still armed
+    expect([...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS)).toBe(true);
+  });
+
+  it('a new error cycle is audible again from the start', async () => {
+    let online = false;
+    const { deps, calls } = makeDeps({ isOnline: () => online });
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    calls.now += ERROR_SOUND_AUDIBLE_MS;
+    tickSupervisor(deps);
+    expect(calls.errorSound.at(-1)).toBe('mute');
+
+    core.stopRadio();                 // cycle ends (sound stopped + unmuted)
+    expect(calls.errorSound.at(-1)).toBe('stop');
+
+    core.playRadio(0);                // user tries again, still offline
+    expect(core.getState()).toBe('error');
+    tickSupervisor(deps);
+    expect(calls.errorSound.at(-1)).toBe('ensure'); // fresh cycle: audible again
+  });
+
+  it('recovering keeps the error-cycle clock running (no audible reset mid-cycle)', async () => {
+    const { deps, calls } = makeDeps({ isOnline: () => false });
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    expect(core.getState()).toBe('error');
+
+    calls.now += ERROR_SOUND_AUDIBLE_MS / 2;
+    fireTimer(deps, RECOVERY_DELAY_MS);      // offline recheck: error → (recovering skipped) error
+    calls.now += ERROR_SOUND_AUDIBLE_MS / 2;
+    tickSupervisor(deps);
+    expect(calls.errorSound.at(-1)).toBe('mute'); // one uninterrupted cycle: 60s total
+  });
+
+  it('the supervisor stops outside sound states', async () => {
+    const { deps } = makeDeps({ isOnline: () => false });
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    expect(core.getState()).toBe('error');
+    const supervisorCount = () =>
+      [...deps._pendingIntervals.values()].filter(t => t.ms === SOUND_SUPERVISOR_INTERVAL_MS).length;
+    expect(supervisorCount()).toBe(1);
+
+    core.stopRadio();
+    expect(supervisorCount()).toBe(0);
   });
 });

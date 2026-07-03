@@ -13,13 +13,18 @@ export const RECOVERY_DELAY_MS = 10000;
 export const RECOVERY_DELAY_MAX_MS = 60000;
 export const WATCHDOG_INTERVAL_MS = 2000;
 export const WATCHDOG_STALL_TICKS = 3; // ≈6s of frozen playback ⇒ stream is dead
+export const SOUND_SUPERVISOR_INTERVAL_MS = 2500;
+export const ERROR_SOUND_AUDIBLE_MS = 60000; // audible error for at least a minute, then muted
+export const USER_PAUSE_INTENT_MS = 2000; // how long a pauseRadio() call explains a native 'pause'
 
 const STATE_FX = {
   idle:       { button: 'play',  loading: 'stop',  error: 'stop',  loadingMsg: false, errorMsg: false },
   loading:    { button: 'stop',  loading: 'play',  error: 'stop',  loadingMsg: true,  errorMsg: false },
   playing:    { button: 'pause', loading: 'stop',  error: 'stop',  loadingMsg: false, errorMsg: false },
   paused:     { button: 'play',  loading: 'stop',  error: 'stop',  loadingMsg: false, errorMsg: false },
-  retrying:   { button: 'stop',  loading: 'keep',  error: 'stop',  loadingMsg: false, errorMsg: false },
+  // 'play' (not 'keep'): a retry can also start from a watchdog stall while
+  // playing, where no sound is active — the user must never sit in silence.
+  retrying:   { button: 'stop',  loading: 'play',  error: 'stop',  loadingMsg: false, errorMsg: false },
   error:      { button: 'stop',  loading: 'stop',  error: 'play',  loadingMsg: false, errorMsg: true  },
   recovering: { button: 'stop',  loading: 'stop',  error: 'keep',  loadingMsg: false, errorMsg: true  },
 };
@@ -51,11 +56,13 @@ export function createRadioCore(deps) {
     isOnline,
   } = deps;
 
-  const timers = { retry: null, loading: null, recovery: null, watchdog: null };
+  const timers = { retry: null, loading: null, recovery: null, watchdog: null, soundSupervisor: null };
   let retryCount = 0;
   let recoveryCount = 0;
   let currentPlayId = 0;
   let lastPauseTime = null;
+  let userPauseIntentAt = null; // performanceNow() of the last pauseRadio() call
+  let errorSoundStartedAt = null; // when the current uninterrupted error cycle began
 
   // --- State machine (no radio knowledge) ---
 
@@ -69,6 +76,20 @@ export function createRadioCore(deps) {
     // The watchdog only makes sense while we're supposed to be playing
     if (newState === 'playing') startWatchdog();
     else stopWatchdog();
+    // Track how long the user has been listening to the error sound —
+    // one uninterrupted error/recovering stretch counts as one cycle.
+    if (newState === 'error' || newState === 'recovering') {
+      if (errorSoundStartedAt === null) errorSoundStartedAt = performanceNow();
+    } else {
+      errorSoundStartedAt = null;
+    }
+    // While a feedback sound is supposed to be audible, supervise it:
+    // background restrictions can reject or pause <audio> playback silently.
+    if (newState === 'loading' || newState === 'retrying' || newState === 'error' || newState === 'recovering') {
+      startSoundSupervisor();
+    } else {
+      stopSoundSupervisor();
+    }
   });
 
   setState('idle');
@@ -167,6 +188,9 @@ export function createRadioCore(deps) {
   }
 
   function pauseRadio() {
+    // Remember that this pause was asked for by the user, so the native
+    // 'pause' event it triggers isn't mistaken for a dying stream.
+    userPauseIntentAt = performanceNow();
     playerPause();
   }
 
@@ -206,7 +230,7 @@ export function createRadioCore(deps) {
         playRadio(getSelectedIndex());
       }
     } else {
-      playerPause();
+      pauseRadio();
     }
   }
 
@@ -232,10 +256,26 @@ export function createRadioCore(deps) {
 
   // Called from native player 'pause' event
   function onPlayerPause() {
-    if (getState() === 'playing') {
-      setState('paused');
-      lastPauseTime = performanceNow();
+    if (getState() !== 'playing') return;
+
+    const userAskedForIt =
+      userPauseIntentAt !== null &&
+      performanceNow() - userPauseIntentAt <= USER_PAUSE_INTENT_MS;
+    userPauseIntentAt = null;
+
+    // A 'pause' nobody asked for while the network is down is the OS killing
+    // a dead stream, not the user — never leave them in silent 'paused':
+    // go through the retry/error pipeline so a feedback sound keeps playing.
+    if (!userAskedForIt && !isOnline()) {
+      lastPauseTime = null;
+      handlePlayError(currentPlayId, getSelectedIndex(), new Error('Network pause'));
+      return;
     }
+
+    // User pause, or an online interruption (headphones unplugged, phone
+    // call, another app taking audio) — those should stay paused.
+    setState('paused');
+    lastPauseTime = performanceNow();
   }
 
   // Called from native player 'error' event (e.g. stream dies mid-playback)
@@ -279,6 +319,37 @@ export function createRadioCore(deps) {
         handlePlayError(currentPlayId, getSelectedIndex(), new Error('Playback stalled'));
       }
     }, WATCHDOG_INTERVAL_MS);
+  }
+
+  // --- Sound supervisor ---
+  // "As long as the user pressed play, something must be audible." Feedback
+  // sounds can silently fail to start (autoplay/background restrictions) or
+  // get paused by the OS. While a state demands a sound, re-assert it every
+  // tick; after ERROR_SOUND_AUDIBLE_MS of uninterrupted error, mute the error
+  // loop (it keeps looping silently so background timers/session stay alive
+  // and silent recovery can keep trying forever).
+
+  function stopSoundSupervisor() {
+    _clearInterval(timers.soundSupervisor);
+    timers.soundSupervisor = null;
+  }
+
+  function superviseSounds() {
+    const s = getState();
+    if (s === 'loading' || s === 'retrying') {
+      loadingSound.ensure();
+    } else if (s === 'error' || s === 'recovering') {
+      if (errorSoundStartedAt !== null && performanceNow() - errorSoundStartedAt >= ERROR_SOUND_AUDIBLE_MS) {
+        errorSound.mute();
+      } else {
+        errorSound.ensure();
+      }
+    }
+  }
+
+  function startSoundSupervisor() {
+    if (timers.soundSupervisor !== null) return;
+    timers.soundSupervisor = _setInterval(superviseSounds, SOUND_SUPERVISOR_INTERVAL_MS);
   }
 
   // Schedule a silent recovery attempt with exponential backoff

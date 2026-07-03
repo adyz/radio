@@ -121,6 +121,7 @@ async function getSoundResponse(src) {
 function audioInstance(htmlElement) {
   let initialSrc = htmlElement.querySelector('source').src;
   let isPlaying = false;
+  let isMuted = false;
   let blobUrl = null;
   let playGeneration = 0;
   let preloadPromise = null;
@@ -152,6 +153,7 @@ function audioInstance(htmlElement) {
   const startPlayback = (gen) => {
     if (gen !== playGeneration || !isPlaying) return;
     htmlElement.volume = 1;
+    htmlElement.muted = isMuted;
     htmlElement.src = blobUrl || initialSrc;
     htmlElement.currentTime = 0;
     htmlElement.play().catch((error) => {
@@ -161,23 +163,51 @@ function audioInstance(htmlElement) {
     });
   };
 
-  return {
-    play() {
-      if (!isPlaying) {
-        const gen = ++playGeneration;
-        isPlaying = true;
-        if (blobUrl) {
-          startPlayback(gen);
-          return;
-        }
-        preloadBlob().then(() => startPlayback(gen));
+  const play = () => {
+    if (!isPlaying) {
+      isMuted = false;
+      htmlElement.muted = false;
+      const gen = ++playGeneration;
+      isPlaying = true;
+      if (blobUrl) {
+        startPlayback(gen);
+        return;
       }
-    },
+      preloadBlob().then(() => startPlayback(gen));
+    }
+  };
+
+  return {
+    play,
     stop() {
       playGeneration++;
       htmlElement.pause();
       htmlElement.src = '';
       isPlaying = false;
+      isMuted = false;
+      htmlElement.muted = false;
+    },
+    // Self-healing: called periodically by the core's sound supervisor while
+    // this sound is supposed to be audible. Restarts playback if a play()
+    // was rejected (background/autoplay policy) or the OS paused the element.
+    ensure() {
+      if (!isPlaying) {
+        play();
+        return;
+      }
+      if (htmlElement.paused) {
+        const gen = playGeneration;
+        htmlElement.play().catch((error) => {
+          if (gen !== playGeneration) return;
+          if (error.name !== 'AbortError') isPlaying = false; // retried next tick
+        });
+      }
+    },
+    // Keeps looping, but silently — playback continuing is what keeps the
+    // media session and background timers alive during long error stretches.
+    mute() {
+      isMuted = true;
+      htmlElement.muted = true;
     },
     warmUp() {
       if (isPlaying) return;

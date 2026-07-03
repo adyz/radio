@@ -101,6 +101,36 @@ Verificari (efectuate):
 - Ramas pentru PR: deploy preview pe Vercel (routes + headers) si smoke
   MediaSession pe device real.
 
+## Interludiu (inainte de Faza 2): fix "always audible" la offline [gata]
+
+Bug raportat: pe mobil, cand pica reteaua in timpul redarii, sunetul de
+loading/eroare uneori nu se aude, iar UI-ul arata "paused" desi userul nu a
+dat pauza. Cauze gasite si fixate (branch `fix/always-audible-offline`):
+
+1. Pauza nativa data de OS la moartea stream-ului era tratata ca pauza de la
+   user -> starea 'paused' oprea watchdog-ul si nu programa nicio recuperare.
+   Fix: pauseRadio() marcheaza intentia userului (USER_PAUSE_INTENT_MS);
+   un pause neasteptat + offline intra pe pipeline-ul retry/error cu sunete.
+   Pause neasteptat + online ramane 'paused' (casti scoase, telefon, alta
+   aplicatie) — gap cunoscut: wifi fara internet + pause nativ.
+2. Sunetele porneau o singura data, fara retry la reject (tipic in background).
+   Fix: sound supervisor — interval (SOUND_SUPERVISOR_INTERVAL_MS) care
+   re-aserteaza sunetul cerut de stare via ensure() cat timp starea e
+   loading/retrying/error/recovering.
+3. 'retrying' avea loading:'keep' -> venind din watchdog stall, 3s de tacere.
+   Fix: loading:'play'.
+4. Cerinta noua: sunetul de eroare audibil minim 1 minut (ERROR_SOUND_AUDIBLE_MS),
+   apoi mute() — elementul continua loop-ul MUT ca sa tina sesiunea media si
+   timerele vii in background, iar recovery-ul silentios continua la nesfarsit.
+   De validat pe iOS real daca loop-ul mut chiar previne suspendarea.
+
+Teste: 11 unit tests noi (64 total), 2 e2e noi (37 total) — cele 35 e2e vechi
+neatinse si verzi. Comportamentul e specificat executabil in describe-ul e2e
+'Offline mid-playback — always audible'.
+
+Nota pentru Faza 4 (XState): aceste comportamente (intentie pauza, supervisor,
+cap eroare) se porteaza ca events/guards/actori — testele raman dovada.
+
 ## Faza 2: TypeScript
 
 Obiectiv: type safety pe contractul core <-> DOM, fara nicio schimbare de logica.
