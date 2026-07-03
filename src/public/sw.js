@@ -2,9 +2,9 @@
 // Bump APP_CACHE version when static files change to force re-cache.
 // Bump SOUND_CACHE version when sound files change.
 
-const APP_CACHE_NAME = 'radio-app-v2';
-const CACHE_NAME = 'radio-images-v2';
-const SOUND_CACHE_NAME = 'radio-sounds-v1';
+const APP_CACHE_NAME = 'radio-app-v3';
+const CACHE_NAME = 'radio-images-v3';
+const SOUND_CACHE_NAME = 'radio-sounds-v2';
 const MAX_CACHED_IMAGES = 30;
 
 // App shell — everything needed to render the page offline.
