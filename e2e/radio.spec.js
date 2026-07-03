@@ -887,3 +887,69 @@ test.describe('Offline mid-playback — always audible', () => {
     await expect(c.loadingMsg).toBeHidden();
   });
 });
+
+// Deliberate white-box exception (same rationale as the cache-versioning
+// describe): the iOS behavior this guards — backgrounded Safari denying any
+// FRESH play() start while allowing an already-playing element to swap its
+// source and continue — cannot be reproduced in headless Chromium. We
+// simulate the denial by patching the error element's play() to reject the
+// way iOS does, then assert the user-audible outcome.
+test.describe('iOS-like playback denial — sound carry', () => {
+
+  test('when the error sound cannot start, the loading element carries it', async ({ page }) => {
+    test.setTimeout(60_000);
+    const c = ui(page);
+
+    let connectionDown = false;
+    await page.route(STREAM_URL_RE, async (route) => {
+      if (connectionDown) {
+        await route.abort('internetdisconnected');
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: 'audio/mpeg', path: 'src/public/sounds/test-tone.mp3' });
+    });
+
+    await page.goto('/');
+    await waitForSoundBlobs(page);
+    await c.playButton.click();
+    await expect(c.pauseButton).toBeVisible({ timeout: 8000 });
+
+    // From here on, the error element behaves like backgrounded iOS: every
+    // fresh start is denied.
+    await page.evaluate(() => {
+      const el = document.getElementById('errorNoise');
+      el.play = () => Promise.reject(new DOMException('denied', 'NotAllowedError'));
+    });
+
+    connectionDown = true;
+    await page.context().setOffline(true);
+
+    // The loading sound starts (retrying); remember its own source.
+    await expectSoundPlaying(page, 'loadingNoise');
+    const loadingOwnSrc = await page.evaluate(() => document.getElementById('loadingNoise').src);
+
+    await expect(c.errorMsg).toBeVisible({ timeout: 10000 });
+
+    // The user must NOT end up in silence: the loading element keeps playing
+    // and, once the supervisor notices the denied start, carries the error
+    // tone (its source switches away from its own sound).
+    await page.waitForFunction((ownSrc) => {
+      const carrier = document.getElementById('loadingNoise');
+      return !carrier.paused && Boolean(carrier.src) && carrier.src !== ownSrc;
+    }, loadingOwnSrc, { timeout: 10000 });
+
+    // …while the denied element itself never started.
+    const errorPaused = await page.evaluate(() => document.getElementById('errorNoise').paused);
+    expect(errorPaused).toBe(true);
+
+    // The network returns: the radio recovers and every feedback sound stops,
+    // including the carrying element.
+    connectionDown = false;
+    await page.context().setOffline(false);
+    await expect(c.pauseButton).toBeVisible({ timeout: 45000 });
+    await page.waitForFunction(() =>
+      document.getElementById('loadingNoise').paused &&
+      document.getElementById('errorNoise').paused,
+      { timeout: 5000 });
+  });
+});

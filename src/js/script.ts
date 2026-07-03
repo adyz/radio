@@ -135,20 +135,46 @@ async function getSoundResponse(src: string): Promise<Response> {
   return response;
 }
 
+// =====================================================================
+// Sound handoff protocol (rules verified on a real iPhone, 2026-07-03):
+//
+//   1. Backgrounded iOS DENIES any fresh play() start — even on a warmed-up
+//      element, even while another element of the page is playing.
+//   2. Backgrounded iOS ALLOWS an element that is already playing to swap
+//      its src and continue (the playlist pattern).
+//
+// Product invariant: once the user pressed play, something must always be
+// audible. So when one feedback sound replaces the other (loading <-> error):
+//
+//   - deferred stop  — the OLD sound keeps playing until the NEW one actually
+//     produces audio (its 'playing' event); no silent gap ever opens.
+//   - carry          — if the new sound still hasn't started by a supervisor
+//     tick (rule 1 denied it) while the old one is audible, the old ELEMENT
+//     carries the new sound: its src is swapped to the new tone (rule 2).
+//   - reclaim        — play()/stop() on a carrying element automatically
+//     restore its own sound / release the deferral.
+//
+// A user stop/pause silences both immediately: stopping a still-pending
+// sound settles it, which releases the partner's deferred stop too.
+// =====================================================================
+
 interface SfxInstance {
   play(): void;
   stop(): void;
+  /** Supervisor hook: re-assert playback if a play() was denied or the OS
+   *  paused the element; escalates to carry() on the partner (see protocol). */
   ensure(): void;
   warmUp(): void;
   preloadBlob(): Promise<string | null>;
+  /** True between play() and the element actually producing audio. */
   isStartPending(): boolean;
+  /** Runs callback once this sound starts OR is stopped — whichever first. */
   onStartSettled(callback: () => void): void;
   setPartner(partner: SfxInstance): void;
   isAudiblyPlaying(): boolean;
-  /** Last-resort iOS takeover: swap this (already playing) element's source
-   *  to the partner's sound — a continuation, which backgrounded iOS allows,
-   *  unlike the fresh start it just denied. */
-  hijackWith(src: string): void;
+  /** Carry the partner's sound on this (already playing) element: swap src
+   *  and continue — the one playback start backgrounded iOS allows. */
+  carrySound(src: string): void;
 }
 
 function audioInstance(htmlElement: HTMLAudioElement): SfxInstance {
@@ -159,16 +185,12 @@ function audioInstance(htmlElement: HTMLAudioElement): SfxInstance {
   let preloadPromise: Promise<string | null> | null = null;
   htmlElement.dataset.blobReady = 'false';
 
-  // --- Graceful handoff state ---
-  // iOS kills the app's audio session in any gap of silence and then denies
-  // the next play(). When this sound replaces its partner (loading <-> error),
-  // the partner keeps playing until THIS element actually produces audio
-  // ('playing' event) — only then does the partner's deferred stop run.
+  // --- Handoff state (see protocol above) ---
   let partner: SfxInstance | null = null;
   let startPending = false;
-  let stopDeferGeneration = 0;
-  let borrowedSrc: string | null = null; // set while this element carries the partner's sound
-  let hijackAttempted = false; // one takeover attempt per play cycle
+  let deferredStopGeneration = 0; // invalidates a queued deferred stop
+  let carriedSrc: string | null = null; // set while carrying the partner's sound
+  let carryAttempted = false; // ask the partner to carry at most once per play cycle
   const startSettlers: Array<() => void> = [];
 
   const settleStart = () => {
@@ -213,13 +235,13 @@ function audioInstance(htmlElement: HTMLAudioElement): SfxInstance {
   };
 
   const play = () => {
-    // Any play intent cancels a deferred stop queued for this instance
-    // (e.g. error → loading → error flapping while the partner never started).
-    stopDeferGeneration++;
-    hijackAttempted = false;
-    if (borrowedSrc) {
-      // The element is carrying the partner's sound — reclaim it with our own.
-      borrowedSrc = null;
+    // Fresh play intent: cancel a queued deferred stop for this instance
+    // (error → loading → error flapping while the partner never started)
+    // and reclaim the element if it was carrying the partner's sound.
+    deferredStopGeneration++;
+    carryAttempted = false;
+    if (carriedSrc) {
+      carriedSrc = null;
       isPlaying = false;
     }
     if (!isPlaying) {
@@ -239,33 +261,30 @@ function audioInstance(htmlElement: HTMLAudioElement): SfxInstance {
     htmlElement.pause();
     htmlElement.src = '';
     isPlaying = false;
-    borrowedSrc = null;
-    hijackAttempted = false;
+    carriedSrc = null;
+    carryAttempted = false;
   };
 
   return {
     play,
     stop() {
-      // This sound will never start now — release anyone waiting on it
-      // (the partner's own deferred stop), so a user stop silences BOTH.
+      // This sound will never start now — settle it, which also releases a
+      // partner waiting on us (so a user stop silences BOTH immediately).
       startPending = false;
       settleStart();
 
-      // Handoff: if the replacement sound was asked to play but hasn't
-      // produced audio yet, keep this one playing until it does — a gap of
-      // silence here is where iOS would deny the replacement's play().
+      // Deferred stop: while the replacement sound hasn't produced audio yet,
+      // keep this one playing (see protocol rule 1 — the silent gap is where
+      // iOS denies the replacement's start).
       if (partner?.isStartPending()) {
-        const deferGen = ++stopDeferGeneration;
+        const gen = ++deferredStopGeneration;
         partner.onStartSettled(() => {
-          if (deferGen === stopDeferGeneration) doStop();
+          if (gen === deferredStopGeneration) doStop();
         });
         return;
       }
       doStop();
     },
-    // Self-healing: called periodically by the core's sound supervisor while
-    // this sound is supposed to be audible. Restarts playback if a play()
-    // was rejected (background/autoplay policy) or the OS paused the element.
     ensure() {
       if (!isPlaying) {
         play();
@@ -277,13 +296,11 @@ function audioInstance(htmlElement: HTMLAudioElement): SfxInstance {
         });
       }
 
-      // iOS last resort: we still haven't produced audio (backgrounded iOS
-      // denies FRESH playback starts), but the partner element is audibly
-      // playing — and a playing element may swap sources and continue
-      // (playlist-style). Borrow it so the right sound is heard.
-      if (startPending && htmlElement.paused && !hijackAttempted && partner?.isAudiblyPlaying()) {
-        hijackAttempted = true;
-        partner.hijackWith(blobUrl || initialSrc);
+      // Escalation: our start keeps being denied but the partner element is
+      // audible — have IT carry our sound (protocol rule 2).
+      if (startPending && htmlElement.paused && !carryAttempted && partner?.isAudiblyPlaying()) {
+        carryAttempted = true;
+        partner.carrySound(blobUrl || initialSrc);
       }
     },
     warmUp() {
@@ -311,16 +328,16 @@ function audioInstance(htmlElement: HTMLAudioElement): SfxInstance {
       partner = p;
     },
     isAudiblyPlaying: () => isPlaying && !htmlElement.paused,
-    hijackWith(src: string) {
-      if (!isPlaying || htmlElement.paused) return; // nothing audible to borrow
-      if (borrowedSrc === src) return;              // already carrying it
-      borrowedSrc = src;
+    carrySound(src: string) {
+      if (!isPlaying || htmlElement.paused) return; // nothing audible to lend
+      if (carriedSrc === src) return;               // already carrying it
+      carriedSrc = src;
       htmlElement.src = src;
       htmlElement.currentTime = 0;
       htmlElement.play().catch(() => {
-        // The continuation was denied too — restore our own sound rather
-        // than end up fully silent.
-        borrowedSrc = null;
+        // Even the continuation was denied — restore our own sound rather
+        // than trade something audible for silence.
+        carriedSrc = null;
         htmlElement.src = blobUrl || initialSrc;
         htmlElement.currentTime = 0;
         htmlElement.play().catch(() => {});

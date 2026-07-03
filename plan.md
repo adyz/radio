@@ -134,6 +134,19 @@ dat pauza. Cauze gasite si fixate (branch `fix/always-audible-offline`):
    (invariantul: orice sunet > liniste) iar supervizorul reincearca.
    Testul e2e 'offline station change...' actualizat la noua semantica
    (asteapta finalizarea handoff-ului, nu opririle instantanee).
+7. Carry (confirmat pe iPhone real): iOS in background REFUZA orice
+   pornire proaspata de element audio, dar PERMITE unui element care
+   deja canta sa-si schimbe src si sa continue (pattern-ul playlist).
+   Daca sunetul de eroare nu porneste pana la tick-ul supervizorului,
+   elementul de loading (audibil) ii "cara" tonul — carrySound(). Protocol
+   documentat in script.ts; testat e2e prin simularea refuzului iOS
+   (describe 'iOS-like playback denial', exceptie white-box justificata).
+8. Reactie instant la evenimentul window 'offline' (in loc de ~6s de
+   watchdog) — watchdog-ul ramane pentru wifi-fara-internet.
+9. Widget-ul Now Playing pe macOS ramane gol in starea de eroare offline —
+   limitare cunoscuta, acceptata (3 tentative de fix revertate: re-assert
+   amanat, hook-uri pe evenimentele playerului, artwork scos offline).
+   Edge case rar pe laptop; de reluat doar daca devine suparator.
 
 Teste: 63 unit (incl. 'error sound stays audible indefinitely' si testul de
 ordine play-inainte-de-stop), 37 e2e — cele 35 vechi neatinse si verzi.
