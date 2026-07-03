@@ -35,7 +35,7 @@ const LABELS = {
 
 // Keep in sync with src/sw.js so page-level preloads and SW precache share
 // the same durable sound cache.
-const SOUND_CACHE_NAME = 'radio-sounds-v1';
+const SOUND_CACHE_NAME = 'radio-sounds-v2';
 
 function cloudinaryImageUrl(text, live = false) {
   const url_non_live = 'nndti4oybhdzggf8epvh';
@@ -50,7 +50,7 @@ const STATUS_IMAGE_TEXTS = [
   ...Array.from(radioSelect.options).map(o => o.text),
 ];
 if ('caches' in window) {
-  caches.open('radio-images-v2').then(cache => {
+  caches.open('radio-images-v3').then(cache => {
     STATUS_IMAGE_TEXTS.forEach(text => {
       const url = cloudinaryImageUrl(text);
       cache.match(url)
@@ -121,7 +121,6 @@ async function getSoundResponse(src) {
 function audioInstance(htmlElement) {
   let initialSrc = htmlElement.querySelector('source').src;
   let isPlaying = false;
-  let isMuted = false;
   let blobUrl = null;
   let playGeneration = 0;
   let preloadPromise = null;
@@ -153,7 +152,6 @@ function audioInstance(htmlElement) {
   const startPlayback = (gen) => {
     if (gen !== playGeneration || !isPlaying) return;
     htmlElement.volume = 1;
-    htmlElement.muted = isMuted;
     htmlElement.src = blobUrl || initialSrc;
     htmlElement.currentTime = 0;
     htmlElement.play().catch((error) => {
@@ -165,8 +163,6 @@ function audioInstance(htmlElement) {
 
   const play = () => {
     if (!isPlaying) {
-      isMuted = false;
-      htmlElement.muted = false;
       const gen = ++playGeneration;
       isPlaying = true;
       if (blobUrl) {
@@ -184,8 +180,6 @@ function audioInstance(htmlElement) {
       htmlElement.pause();
       htmlElement.src = '';
       isPlaying = false;
-      isMuted = false;
-      htmlElement.muted = false;
     },
     // Self-healing: called periodically by the core's sound supervisor while
     // this sound is supposed to be audible. Restarts playback if a play()
@@ -202,12 +196,6 @@ function audioInstance(htmlElement) {
           if (error.name !== 'AbortError') isPlaying = false; // retried next tick
         });
       }
-    },
-    // Keeps looping, but silently — playback continuing is what keeps the
-    // media session and background timers alive during long error stretches.
-    mute() {
-      isMuted = true;
-      htmlElement.muted = true;
     },
     warmUp() {
       if (isPlaying) return;
