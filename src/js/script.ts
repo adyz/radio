@@ -635,6 +635,10 @@ player.addEventListener('error', () => core.onPlayerError());
 // Auto-recovery when network comes back
 window.addEventListener('online', () => core.retryFromError());
 
+// React instantly when the browser reports the network is gone — no need to
+// wait for the playback watchdog to notice the frozen stream.
+window.addEventListener('offline', () => core.onNetworkOffline());
+
 // Prev / Next
 prevButton.addEventListener('click', () => {
   preloadAudioBlobs();

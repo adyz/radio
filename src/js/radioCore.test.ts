@@ -1316,3 +1316,50 @@ describe('sound supervisor', () => {
     expect(supervisorCount()).toBe(0);
   });
 });
+
+// =============================================
+// FAST OFFLINE REACTION — the 'offline' event beats the watchdog
+// =============================================
+
+describe('onNetworkOffline', () => {
+  it('reacts instantly while playing: retrying with the loading sound, no watchdog wait', async () => {
+    let online = true;
+    const { deps, calls } = makeDeps({ isOnline: () => online });
+    const core = createRadioCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    expect(core.getState()).toBe('playing');
+
+    online = false;
+    core.onNetworkOffline(); // window 'offline' event
+
+    expect(core.getState()).toBe('retrying');
+    expect(calls.loadingSound.at(-1)).toBe('play');
+
+    fireTimer(deps, 3000); // the retry runs while still offline → error
+    expect(core.getState()).toBe('error');
+    expect(calls.errorSound.at(-1)).toBe('play');
+  });
+
+  it('does nothing outside playing (paused stays paused, idle stays idle)', async () => {
+    let online = true;
+    const { deps } = makeDeps({ isOnline: () => online });
+    const core = createRadioCore(deps);
+
+    online = false;
+    core.onNetworkOffline();
+    expect(core.getState()).toBe('idle');
+
+    online = true;
+    core.playRadio(0);
+    await flushPromises();
+    core.pauseRadio();
+    core.onPlayerPause();
+    expect(core.getState()).toBe('paused');
+
+    online = false;
+    core.onNetworkOffline();
+    expect(core.getState()).toBe('paused');
+  });
+});

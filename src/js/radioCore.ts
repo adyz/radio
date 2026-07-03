@@ -347,6 +347,16 @@ export function createRadioCore(deps: RadioDeps) {
     }
   }
 
+  // Called from the window 'offline' event: the browser KNOWS the network is
+  // gone, so don't wait ~6s for the watchdog to notice the frozen stream —
+  // start the audible retry/error pipeline immediately. The watchdog still
+  // covers wifi-without-internet, where no 'offline' event ever fires.
+  function onNetworkOffline() {
+    if (getState() !== 'playing') return;
+    lastPauseTime = null;
+    handlePlayError(currentPlayId, getSelectedIndex(), new Error('Network offline'));
+  }
+
   // --- Playback watchdog ---
   // Stream failures often don't fire any 'error'/'stalled' event — the audio
   // just goes silent while currentTime stops advancing (classic with HLS or
@@ -496,6 +506,7 @@ export function createRadioCore(deps: RadioDeps) {
     onPlayerPlay,
     onPlayerPause,
     onPlayerError,
+    onNetworkOffline,
     retryFromError,
     onPlayButtonClick,
     _getPlayId: () => currentPlayId,
