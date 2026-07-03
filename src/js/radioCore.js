@@ -14,7 +14,6 @@ export const RECOVERY_DELAY_MAX_MS = 60000;
 export const WATCHDOG_INTERVAL_MS = 2000;
 export const WATCHDOG_STALL_TICKS = 3; // ≈6s of frozen playback ⇒ stream is dead
 export const SOUND_SUPERVISOR_INTERVAL_MS = 2500;
-export const ERROR_SOUND_AUDIBLE_MS = 60000; // audible error for at least a minute, then muted
 export const USER_PAUSE_INTENT_MS = 2000; // how long a pauseRadio() call explains a native 'pause'
 
 const STATE_FX = {
@@ -62,27 +61,25 @@ export function createRadioCore(deps) {
   let currentPlayId = 0;
   let lastPauseTime = null;
   let userPauseIntentAt = null; // performanceNow() of the last pauseRadio() call
-  let errorSoundStartedAt = null; // when the current uninterrupted error cycle began
 
   // --- State machine (no radio knowledge) ---
 
   const { getState, setState } = createStateMachine(STATE_FX, (fx, newState) => {
     showButton(fx.button);
-    if (fx.loading !== 'keep') loadingSound[fx.loading]();
-    if (fx.error !== 'keep') errorSound[fx.error]();
+    // Start the new sound BEFORE stopping the old one: the brief overlap keeps
+    // the audio session continuously active, so iOS is far likelier to allow
+    // the new sound to start when the app is backgrounded/locked. A gap of
+    // silence between stop and play is exactly where play() gets denied.
+    if (fx.loading === 'play') loadingSound.play();
+    if (fx.error === 'play') errorSound.play();
+    if (fx.loading === 'stop') loadingSound.stop();
+    if (fx.error === 'stop') errorSound.stop();
     setLoadingMsg(fx.loadingMsg);
     setErrorMsg(fx.errorMsg);
     updateMediaSession(newState);
     // The watchdog only makes sense while we're supposed to be playing
     if (newState === 'playing') startWatchdog();
     else stopWatchdog();
-    // Track how long the user has been listening to the error sound —
-    // one uninterrupted error/recovering stretch counts as one cycle.
-    if (newState === 'error' || newState === 'recovering') {
-      if (errorSoundStartedAt === null) errorSoundStartedAt = performanceNow();
-    } else {
-      errorSoundStartedAt = null;
-    }
     // While a feedback sound is supposed to be audible, supervise it:
     // background restrictions can reject or pause <audio> playback silently.
     if (newState === 'loading' || newState === 'retrying' || newState === 'error' || newState === 'recovering') {
@@ -322,12 +319,11 @@ export function createRadioCore(deps) {
   }
 
   // --- Sound supervisor ---
-  // "As long as the user pressed play, something must be audible." Feedback
-  // sounds can silently fail to start (autoplay/background restrictions) or
-  // get paused by the OS. While a state demands a sound, re-assert it every
-  // tick; after ERROR_SOUND_AUDIBLE_MS of uninterrupted error, mute the error
-  // loop (it keeps looping silently so background timers/session stay alive
-  // and silent recovery can keep trying forever).
+  // "As long as the user pressed play, something must ALWAYS be audible" —
+  // stream, loading sound or error sound; silence only in idle/paused.
+  // Feedback sounds can silently fail to start (autoplay/background
+  // restrictions) or get paused by the OS, so while a state demands a sound,
+  // re-assert it on every tick, indefinitely.
 
   function stopSoundSupervisor() {
     _clearInterval(timers.soundSupervisor);
@@ -339,11 +335,7 @@ export function createRadioCore(deps) {
     if (s === 'loading' || s === 'retrying') {
       loadingSound.ensure();
     } else if (s === 'error' || s === 'recovering') {
-      if (errorSoundStartedAt !== null && performanceNow() - errorSoundStartedAt >= ERROR_SOUND_AUDIBLE_MS) {
-        errorSound.mute();
-      } else {
-        errorSound.ensure();
-      }
+      errorSound.ensure();
     }
   }
 

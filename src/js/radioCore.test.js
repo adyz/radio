@@ -6,7 +6,6 @@ import {
   WATCHDOG_INTERVAL_MS,
   WATCHDOG_STALL_TICKS,
   SOUND_SUPERVISOR_INTERVAL_MS,
-  ERROR_SOUND_AUDIBLE_MS,
   USER_PAUSE_INTENT_MS,
 } from './radioCore.js';
 
@@ -53,13 +52,11 @@ function makeDeps(overrides = {}) {
       play: () => calls.loadingSound.push('play'),
       stop: () => calls.loadingSound.push('stop'),
       ensure: () => calls.loadingSound.push('ensure'),
-      mute: () => calls.loadingSound.push('mute'),
     },
     errorSound: {
       play: () => calls.errorSound.push('play'),
       stop: () => calls.errorSound.push('stop'),
       ensure: () => calls.errorSound.push('ensure'),
-      mute: () => calls.errorSound.push('mute'),
     },
     showButton: (which) => calls.showButton.push(which),
     setLoadingMsg: (v) => calls.loadingMsg.push(v),
@@ -1253,55 +1250,46 @@ describe('sound supervisor', () => {
     expect(calls.errorSound.at(-1)).toBe('ensure');
   });
 
-  it('mutes the error sound after ERROR_SOUND_AUDIBLE_MS but recovery continues', async () => {
+  it('the error sound stays audible indefinitely — never muted, never stopped', async () => {
     const { deps, calls } = makeDeps({ isOnline: () => false });
     const core = createRadioCore(deps);
 
     core.playRadio(0);
     expect(core.getState()).toBe('error');
 
-    tickSupervisor(deps);
-    expect(calls.errorSound.at(-1)).toBe('ensure'); // audible within the first minute
-
-    calls.now += ERROR_SOUND_AUDIBLE_MS;
-    tickSupervisor(deps);
-    expect(calls.errorSound.at(-1)).toBe('mute');   // silent afterwards…
-
-    // …while the silent recovery timer is still armed
+    // Ten minutes of continuous error: still audibly re-asserted every tick,
+    // and silent recovery is still armed. Silence is allowed ONLY when the
+    // user stops/pauses or never pressed play.
+    calls.now += 10 * 60_000;
+    tickSupervisor(deps, 5);
+    expect(calls.errorSound.at(-1)).toBe('ensure');
+    expect(calls.errorSound).not.toContain('mute');
     expect([...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS)).toBe(true);
   });
 
-  it('a new error cycle is audible again from the start', async () => {
-    let online = false;
-    const { deps, calls } = makeDeps({ isOnline: () => online });
+  it('starts the error sound BEFORE stopping the loading sound (no audio-session gap)', async () => {
+    // A silent gap between stopping one sound and starting the next is where
+    // iOS denies play() in the background — the swap must overlap.
+    const sequence = [];
+    const sound = (name) => ({
+      play:   () => sequence.push(`${name}:play`),
+      stop:   () => sequence.push(`${name}:stop`),
+      ensure: () => sequence.push(`${name}:ensure`),
+    });
+    const { deps } = makeDeps({ loadingSound: sound('loading'), errorSound: sound('error') });
+    deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
     const core = createRadioCore(deps);
 
-    core.playRadio(0);
-    calls.now += ERROR_SOUND_AUDIBLE_MS;
-    tickSupervisor(deps);
-    expect(calls.errorSound.at(-1)).toBe('mute');
-
-    core.stopRadio();                 // cycle ends (sound stopped + unmuted)
-    expect(calls.errorSound.at(-1)).toBe('stop');
-
-    core.playRadio(0);                // user tries again, still offline
-    expect(core.getState()).toBe('error');
-    tickSupervisor(deps);
-    expect(calls.errorSound.at(-1)).toBe('ensure'); // fresh cycle: audible again
-  });
-
-  it('recovering keeps the error-cycle clock running (no audible reset mid-cycle)', async () => {
-    const { deps, calls } = makeDeps({ isOnline: () => false });
-    const core = createRadioCore(deps);
-
-    core.playRadio(0);
+    core.playRadio(0);          // loading (loading:play)
+    await flushPromises();      // retrying
+    fireTimer(deps, 3000);      // retry fails → error
+    await flushPromises();
     expect(core.getState()).toBe('error');
 
-    calls.now += ERROR_SOUND_AUDIBLE_MS / 2;
-    fireTimer(deps, RECOVERY_DELAY_MS);      // offline recheck: error → (recovering skipped) error
-    calls.now += ERROR_SOUND_AUDIBLE_MS / 2;
-    tickSupervisor(deps);
-    expect(calls.errorSound.at(-1)).toBe('mute'); // one uninterrupted cycle: 60s total
+    const errorPlayIdx = sequence.lastIndexOf('error:play');
+    const loadingStopIdx = sequence.lastIndexOf('loading:stop');
+    expect(errorPlayIdx).toBeGreaterThan(-1);
+    expect(loadingStopIdx).toBeGreaterThan(errorPlayIdx);
   });
 
   it('the supervisor stops outside sound states', async () => {
