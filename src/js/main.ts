@@ -109,9 +109,9 @@ const core = createRadioCore({
     maybeReloadForPendingServiceWorkerUpdate(s);
   },
   saveLastIndex,
-  setTimeout,
-  clearTimeout:  (id) => clearTimeout(id ?? undefined),
-  setInterval,
+  // Wrapped: the machine calls these as methods on deps, and browser timer
+  // functions throw "Illegal invocation" when invoked with a foreign `this`.
+  setInterval:   (fn, ms) => setInterval(fn, ms),
   clearInterval: (id) => clearInterval(id ?? undefined),
   performanceNow:   () => performance.now(),
   isOnline:          () => navigator.onLine,
