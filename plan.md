@@ -5,6 +5,11 @@ Branch de lucru: `migrate-vite-ts-xstate`
 Planul anterior (stabilizare toolchain, build fail-fast, SW reload, flaky e2e)
 este complet incheiat — vezi istoricul git al acestui fisier.
 
+STATUS FINAL (2026-07-03): Fazele 1, 2, 3, 4a, 5 — COMPLETE si in master.
+Stack: Vite + TypeScript strict + module + XState v5 (+ Stately Inspector in
+dev via /?inspect). Ramas: Faza 4b (redesign audioInstance + canal de feedback
+cu tone in STATE_FX) — separat, cere re-validare pe device.
+
 ## Context si obiectiv
 
 Aplicatia are deja o arhitectura buna: `radioCore.js` e logica pura cu dependency
@@ -350,7 +355,7 @@ Verificari:
   lock screen prev/next/pause pe telefon.
 - Optional: masina vizualizata in Stately editor, link atasat la PR.
 
-## Faza 5: curatenie si documentare
+## Faza 5: curatenie si documentare [gata]
 
 Obiectiv: repo-ul reflecta noua arhitectura.
 
