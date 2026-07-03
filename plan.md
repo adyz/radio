@@ -252,6 +252,36 @@ manual pe MediaSession (iOS/macOS daca se poate — e zona cea mai fragila).
 Obiectiv: tranzitii declarative si timere/race-uri rezolvate din constructie,
 cu paritate 100% de comportament.
 
+### 4a: masina + adaptorul [gata — branch `faza4-xstate`]
+
+Implementat conform planului de mai jos. Note:
+- `applyFx` e entry action parametrizata per stare (nu subscribe) — reenter
+  (RESUME_FAILED, recheck offline) re-aplica fx exact ca vechiul setState.
+- `beginErrorCycle` (increment recoveryCount + clear offlineRecheck) ruleaza
+  pe TRANZITIILE spre error, nu pe entry — garanteaza ca RECOVERY_DELAY vede
+  contextul incrementat. Recheck-ul offline e self-transition cu reenter +
+  `offlineRecheck: true` (cadenta fixa, fara escaladare).
+- pauseRadio/resumePlayer/toggle/onPlayButtonClick raman in adaptor (citesc
+  playerIsPaused/getState live, ca inainte); restul devine events.
+- deps.setTimeout/clearTimeout au DISPARUT din contract (after-delays traiesc
+  in clock-ul actorului); testele injecteaza SimulatedClock impachetat cu
+  vizibilitate pe delay-urile programate (clock.hasScheduled).
+- CAPCANA gasita de e2e (nu de unit): browserul arunca "Illegal invocation"
+  cand masina apeleaza deps.setInterval ca metoda — global timer functions
+  cer this=window; fix: wrapper arrow in main.ts. Unit testele n-o puteau
+  prinde (mock-uri); inca un argument pentru e2e-ul neatins ca dovada.
+- Cost bundle: 16KB -> 60KB raw (5.7 -> 19.3KB gzip) — pretul xstate.
+- Verificat: typecheck curat, 63/63 unit portate (SimulatedClock, playId ->
+  asertiuni comportamentale), 37/37 e2e NEATINSE, coverage 99% pe masina,
+  smoke complet pe vite preview.
+
+### 4b: redesign audioInstance + canal de feedback [de facut]
+
+Ramane separat (vezi sectiunea de mai jos "Redesign audioInstance") — cere
+re-validare pe device (lock screen, prev/next, offline).
+
+### Planul initial (referinta)
+
 - Instalam `xstate` (fara `@xstate/react`).
 - `src/js/radioMachine.ts` cu `setup()`:
   - Stari: `idle`, `loading`, `playing`, `paused`, `retrying`, `error`,

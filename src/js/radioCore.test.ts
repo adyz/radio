@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { SimulatedClock } from 'xstate';
 import {
   createRadioCore,
   RECOVERY_DELAY_MS,
@@ -103,15 +104,41 @@ function flushPromises() {
   return new Promise(resolve => setTimeout(resolve, 0));
 }
 
-function fireTimer(deps: TestDeps, delayMs: number) {
-  for (const [id, timer] of deps._pendingTimers) {
-    if (timer.ms === delayMs) {
-      deps._pendingTimers.delete(id);
-      timer.fn();
-      return true;
-    }
-  }
-  return false;
+// The machine's `after` delays run on the actor clock (not deps timers).
+// This wrapper adds visibility: which delays are currently scheduled.
+function makeClock() {
+  const sim = new SimulatedClock();
+  const pending = new Map<unknown, number>();
+  return {
+    setTimeout(fn: (...args: unknown[]) => void, ms: number) {
+      let id: unknown;
+      id = sim.setTimeout((...args: unknown[]) => {
+        pending.delete(id);
+        fn(...args);
+      }, ms);
+      pending.set(id, ms);
+      return id;
+    },
+    clearTimeout(id: unknown) {
+      pending.delete(id);
+      sim.clearTimeout(id as Parameters<SimulatedClock['clearTimeout']>[0]);
+    },
+    /** Advance simulated time, firing every delay that comes due. */
+    increment(ms: number) {
+      sim.increment(ms);
+    },
+    /** Is a delay of exactly `ms` currently scheduled? */
+    hasScheduled(ms: number) {
+      return [...pending.values()].includes(ms);
+    },
+  };
+}
+type TestClock = ReturnType<typeof makeClock>;
+
+function createCore(deps: TestDeps) {
+  const clock = makeClock();
+  const core = createRadioCore(deps, { clock });
+  return { core, clock };
 }
 
 function tickWatchdog(deps: TestDeps, times = 1) {
@@ -129,7 +156,7 @@ function tickWatchdog(deps: TestDeps, times = 1) {
 describe('side-effects per state', () => {
   it('idle: play button, no sounds, no messages', () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     // starts idle
     expect(core.getState()).toBe('idle');
@@ -140,7 +167,7 @@ describe('side-effects per state', () => {
 
   it('loading: stop button, loading sound, loading message', () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     expect(core.getState()).toBe('loading');
@@ -152,7 +179,7 @@ describe('side-effects per state', () => {
 
   it('playing: pause button, sounds stopped, no messages', async () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -167,7 +194,7 @@ describe('side-effects per state', () => {
 
   it('paused: play button, sounds stopped', async () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -181,7 +208,7 @@ describe('side-effects per state', () => {
   it('retrying: stop button, loading sound keeps playing', async () => {
     const { deps, calls } = makeDeps();
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -196,11 +223,11 @@ describe('side-effects per state', () => {
   it('error: stop button, error sound, error message', async () => {
     const { deps, calls } = makeDeps();
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
-    fireTimer(deps, 3000);
+    clock.increment(3000);
     await flushPromises();
 
     expect(core.getState()).toBe('error');
@@ -213,7 +240,7 @@ describe('side-effects per state', () => {
 
   it('stopRadio → idle: play button, all sounds stopped', () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     core.stopRadio();
@@ -234,7 +261,7 @@ describe('side-effects per state', () => {
 describe('playRadio — happy path', () => {
   it('idle → loading → playing', async () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     expect(core.getState()).toBe('idle');
 
@@ -261,21 +288,21 @@ describe('playRadio — happy path', () => {
 describe('playRadio — error with retry', () => {
   it('goes straight to error when starting offline', () => {
     const { deps, calls } = makeDeps({ isOnline: () => false });
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(1);
 
     expect(core.getState()).toBe('error');
     expect(calls.playerPlay).toEqual([]);
     expect(calls.playerSetSrc.at(-1)).toBe('');
-    expect([...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS)).toBe(true);
+    expect(clock.hasScheduled(RECOVERY_DELAY_MS)).toBe(true);
   });
 
   it('retries then errors after MAX_RETRIES', async () => {
     const { deps, calls } = makeDeps();
     const playError = new Error('Network error');
     deps._setPlayerPlayResult(Promise.reject(playError));
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(1);
     await flushPromises();
@@ -291,7 +318,7 @@ describe('playRadio — error with retry', () => {
     );
 
     // Fire retry timer (3000ms)
-    fireTimer(deps, 3000);
+    clock.increment(3000);
     await flushPromises();
 
     // After MAX_RETRIES (1), second failure → error
@@ -310,7 +337,7 @@ describe('playRadio — error with retry', () => {
 describe('pause and resume', () => {
   it('playing → paused → playing', async () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -327,7 +354,7 @@ describe('pause and resume', () => {
 
   it('onPlayerPause does nothing when not playing', () => {
     const { deps } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.onPlayerPause();
     expect(core.getState()).toBe('idle'); // unchanged
@@ -335,7 +362,7 @@ describe('pause and resume', () => {
 
   it('onPlayerPlay does nothing when not paused', async () => {
     const { deps } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     // in loading state
     core.playRadio(0);
@@ -353,7 +380,7 @@ describe('pause and resume', () => {
 describe('native player errors', () => {
   it('retries when the stream errors while playing', async () => {
     const { deps } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -366,7 +393,7 @@ describe('native player errors', () => {
 
   it('retries when the stream errors while paused', async () => {
     const { deps } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -386,7 +413,7 @@ describe('native player errors', () => {
 describe('stopRadio', () => {
   it('stops from loading', () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     expect(core.getState()).toBe('loading');
@@ -401,7 +428,7 @@ describe('stopRadio', () => {
 
   it('stops from playing', async () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -414,11 +441,11 @@ describe('stopRadio', () => {
   it('stops from error', async () => {
     const { deps, calls } = makeDeps();
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
-    fireTimer(deps, 3000); // retry
+    clock.increment(3000); // retry
     await flushPromises(); // second failure → error
 
     expect(core.getState()).toBe('error');
@@ -428,20 +455,19 @@ describe('stopRadio', () => {
     expect(calls.errorSound.at(-1)).toBe('stop');
   });
 
-  it('invalidates pending callbacks (playId)', async () => {
+  it('discards the in-flight play attempt on stop', async () => {
     const { deps, calls } = makeDeps();
 
     let resolvePlay!: () => void;
     deps._setPlayerPlayResult(new Promise(r => { resolvePlay = r; }));
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
-    const idBefore = core._getPlayId();
-
     core.stopRadio();
-    expect(core._getPlayId()).not.toBe(idBefore);
+    expect(core.getState()).toBe('idle');
 
-    // Now resolve the old play promise — should be ignored
+    // Now resolve the abandoned play promise — the machine left 'loading',
+    // so the invoked actor's late result is discarded by construction.
     resolvePlay();
     await flushPromises();
     expect(core.getState()).toBe('idle'); // not 'playing'
@@ -455,7 +481,7 @@ describe('stopRadio', () => {
 describe('onPlayButtonClick', () => {
   it('plays from idle', () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
     calls.selectedIndex = 3;
 
     core.onPlayButtonClick();
@@ -465,11 +491,11 @@ describe('onPlayButtonClick', () => {
   it('plays from error', async () => {
     const { deps, calls } = makeDeps();
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
-    fireTimer(deps, 3000);
+    clock.increment(3000);
     await flushPromises();
     expect(core.getState()).toBe('error');
 
@@ -480,7 +506,7 @@ describe('onPlayButtonClick', () => {
 
   it('resumes from paused', async () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -494,7 +520,7 @@ describe('onPlayButtonClick', () => {
 
   it('does nothing during loading', () => {
     const { deps } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     expect(core.getState()).toBe('loading');
@@ -511,7 +537,7 @@ describe('onPlayButtonClick', () => {
 describe('prevRadio / nextRadio', () => {
   it('nextRadio wraps around', () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
     calls.selectedIndex = 4; // last station (count = 5)
 
     core.nextRadio();
@@ -520,7 +546,7 @@ describe('prevRadio / nextRadio', () => {
 
   it('prevRadio wraps around', () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
     calls.selectedIndex = 0;
 
     core.prevRadio();
@@ -529,7 +555,7 @@ describe('prevRadio / nextRadio', () => {
 
   it('nextRadio advances normally', () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
     calls.selectedIndex = 2;
 
     core.nextRadio();
@@ -546,22 +572,22 @@ describe('loading timeout', () => {
     const { deps, calls } = makeDeps();
     // playerPlay never resolves (simulates stuck stream)
     deps._setPlayerPlayResult(new Promise(() => {}));
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     expect(core.getState()).toBe('loading');
 
     // Fire the loading timeout (6000ms)
-    fireTimer(deps, 6000);
+    clock.increment(6000);
     // First timeout → retry
     expect(core.getState()).toBe('retrying');
 
     // Fire retry timer
-    fireTimer(deps, 3000);
+    clock.increment(3000);
     expect(core.getState()).toBe('loading');
 
     // Fire loading timeout again
-    fireTimer(deps, 6000);
+    clock.increment(6000);
     // Now MAX_RETRIES exhausted → error
     expect(core.getState()).toBe('error');
   });
@@ -579,7 +605,7 @@ describe('rapid station switching', () => {
       calls.playerPlay.push('play');
       return new Promise(r => resolvers.push(r));
     };
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     core.playRadio(1);
@@ -603,7 +629,7 @@ describe('retrying keeps loading sound', () => {
   it('loading sound is not stopped during retrying', async () => {
     const { deps, calls } = makeDeps();
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -624,7 +650,7 @@ describe('retrying keeps loading sound', () => {
 describe('pauseRadio / resumeRadio', () => {
   it('pauseRadio calls playerPause', async () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -636,7 +662,7 @@ describe('pauseRadio / resumeRadio', () => {
 
   it('resumeRadio calls playerPlay', async () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -650,7 +676,7 @@ describe('pauseRadio / resumeRadio', () => {
 describe('togglePlayPause', () => {
   it('pauses when playing', async () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -663,7 +689,7 @@ describe('togglePlayPause', () => {
 
   it('resumes from paused', async () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -677,7 +703,7 @@ describe('togglePlayPause', () => {
 
   it('plays from idle when paused', () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
     calls.paused = true;
 
     core.togglePlayPause();
@@ -688,7 +714,7 @@ describe('togglePlayPause', () => {
 describe('resume failures', () => {
   it('resumeRadio keeps paused when playerPlay rejects', async () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
     let rejectResume!: (reason?: unknown) => void;
 
     core.playRadio(0);
@@ -710,7 +736,7 @@ describe('resume failures', () => {
 
   it('togglePlayPause keeps paused when resume rejects', async () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
     let rejectResume!: (reason?: unknown) => void;
 
     core.playRadio(0);
@@ -732,7 +758,7 @@ describe('resume failures', () => {
 
   it('onPlayButtonClick keeps paused when resume rejects', async () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
     let rejectResume!: (reason?: unknown) => void;
 
     core.playRadio(0);
@@ -753,7 +779,7 @@ describe('resume failures', () => {
 
   it('resumeRadio handles playerPlay without a promise', async () => {
     const { deps } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -780,7 +806,7 @@ describe('resume failures', () => {
       },
     });
     callsRef = calls;
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -803,7 +829,7 @@ describe('resume failures', () => {
 describe('restart after long pause', () => {
   it('restarts radio if paused > 2 seconds', async () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -824,7 +850,7 @@ describe('restart after long pause', () => {
 
   it('resumes normally if paused < 2 seconds', async () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -847,12 +873,12 @@ describe('recovery backoff', () => {
   it('keeps scheduling recovery forever, with exponential backoff capped at RECOVERY_DELAY_MAX_MS', async () => {
     const { deps } = makeDeps();
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     // Get to error state
     core.playRadio(0);
     await flushPromises();
-    fireTimer(deps, 3000); // retry
+    clock.increment(3000); // retry
     await flushPromises(); // → error
     expect(core.getState()).toBe('error');
 
@@ -865,27 +891,27 @@ describe('recovery backoff', () => {
       RECOVERY_DELAY_MAX_MS,  // stays capped
     ];
     for (const delay of expectedDelays) {
-      expect([...deps._pendingTimers.values()].some(t => t.ms === delay)).toBe(true);
-      fireTimer(deps, delay); // retryFromError → recovering
+      expect(clock.hasScheduled(delay)).toBe(true);
+      clock.increment(delay); // retryFromError → recovering
       await flushPromises();  // fails → error + reschedule
       expect(core.getState()).toBe('error');
     }
 
     // Recovery never gives up — there is always a next attempt scheduled
-    expect([...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MAX_MS)).toBe(true);
+    expect(clock.hasScheduled(RECOVERY_DELAY_MAX_MS)).toBe(true);
   });
 
   it('resets recovery count on successful playRadio', async () => {
     const { deps } = makeDeps();
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     // Get to error with some recovery attempts
     core.playRadio(0);
     await flushPromises();
-    fireTimer(deps, 3000);
+    clock.increment(3000);
     await flushPromises();
-    fireTimer(deps, RECOVERY_DELAY_MS);
+    clock.increment(RECOVERY_DELAY_MS);
     await flushPromises();
     expect(core._getRecoveryCount()).toBeGreaterThan(0);
 
@@ -899,13 +925,13 @@ describe('recovery backoff', () => {
   it('resets recovery count on stopRadio', async () => {
     const { deps } = makeDeps();
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
-    fireTimer(deps, 3000);
+    clock.increment(3000);
     await flushPromises();
-    fireTimer(deps, RECOVERY_DELAY_MS);
+    clock.increment(RECOVERY_DELAY_MS);
     await flushPromises();
     expect(core._getRecoveryCount()).toBeGreaterThan(0);
 
@@ -916,26 +942,26 @@ describe('recovery backoff', () => {
   it('resets recovery count when silent recovery succeeds', async () => {
     const { deps } = makeDeps();
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     // Get to error state
     core.playRadio(0);
     await flushPromises();
-    fireTimer(deps, 3000);
+    clock.increment(3000);
     await flushPromises();
     expect(core.getState()).toBe('error');
 
     // Do a few failed recoveries (backoff: 10s, then 20s)
-    fireTimer(deps, RECOVERY_DELAY_MS);
+    clock.increment(RECOVERY_DELAY_MS);
     await flushPromises();
-    fireTimer(deps, RECOVERY_DELAY_MS * 2);
+    clock.increment(RECOVERY_DELAY_MS * 2);
     await flushPromises();
     // count=3: initial scheduleRecovery(1) + two failed retryFromError re-schedules(2,3)
     expect(core._getRecoveryCount()).toBe(3);
 
     // Now make recovery succeed
     deps._setPlayerPlayResult(Promise.resolve());
-    fireTimer(deps, RECOVERY_DELAY_MS * 4);
+    clock.increment(RECOVERY_DELAY_MS * 4);
     await flushPromises();
 
     expect(core.getState()).toBe('playing');
@@ -945,36 +971,36 @@ describe('recovery backoff', () => {
   it('returns to error when silent recovery times out', async () => {
     const { deps, calls } = makeDeps();
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
-    fireTimer(deps, 3000);
+    clock.increment(3000);
     await flushPromises();
     expect(core.getState()).toBe('error');
 
     deps._setPlayerPlayResult(new Promise(() => {}));
-    fireTimer(deps, RECOVERY_DELAY_MS);
+    clock.increment(RECOVERY_DELAY_MS);
     expect(core.getState()).toBe('recovering');
 
-    fireTimer(deps, 6000);
+    clock.increment(6000);
 
     expect(core.getState()).toBe('error');
     expect(calls.playerSetSrc.at(-1)).toBe('');
     // Second failed attempt → backoff doubles to 20s
-    expect([...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS * 2)).toBe(true);
+    expect(clock.hasScheduled(RECOVERY_DELAY_MS * 2)).toBe(true);
   });
 
   it('offline recovery reschedules without attempting stream', async () => {
     let online = true;
     const { deps, calls } = makeDeps({ isOnline: () => online });
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     // Get to error state
     core.playRadio(0);
     await flushPromises();
-    fireTimer(deps, 3000);
+    clock.increment(3000);
     await flushPromises();
     expect(core.getState()).toBe('error');
 
@@ -983,30 +1009,30 @@ describe('recovery backoff', () => {
     const playsBefore = calls.playerPlay.length;
 
     // Fire recovery while offline — should reschedule, not attempt stream
-    fireTimer(deps, RECOVERY_DELAY_MS);
+    clock.increment(RECOVERY_DELAY_MS);
     await flushPromises();
 
     expect(core.getState()).toBe('error');
     // No playerPlay attempted while offline
     expect(calls.playerPlay.length).toBe(playsBefore);
     // A new recovery timer was scheduled
-    const hasRecoveryTimer = [...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS);
+    const hasRecoveryTimer = clock.hasScheduled(RECOVERY_DELAY_MS);
     expect(hasRecoveryTimer).toBe(true);
   });
 
   it('onPlayButtonClick from recovering resets recovery count', async () => {
     const { deps } = makeDeps();
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     // Get to error → recovering
     core.playRadio(0);
     await flushPromises();
-    fireTimer(deps, 3000);
+    clock.increment(3000);
     await flushPromises();
     expect(core.getState()).toBe('error');
 
-    fireTimer(deps, RECOVERY_DELAY_MS);
+    clock.increment(RECOVERY_DELAY_MS);
     await flushPromises();
     expect(core._getRecoveryCount()).toBeGreaterThan(0);
 
@@ -1023,12 +1049,12 @@ describe('recovery backoff', () => {
     let online = true;
     const { deps, calls } = makeDeps({ isOnline: () => online });
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     // Get to error state (online)
     core.playRadio(0);
     await flushPromises();
-    fireTimer(deps, 3000);
+    clock.increment(3000);
     await flushPromises();
     expect(core.getState()).toBe('error');
 
@@ -1036,19 +1062,19 @@ describe('recovery backoff', () => {
     online = false;
     const playsBefore = calls.playerPlay.length;
     for (let i = 0; i < 100; i++) {
-      fireTimer(deps, RECOVERY_DELAY_MS);
+      clock.increment(RECOVERY_DELAY_MS);
       await flushPromises();
     }
 
     // Still waiting patiently: no stream attempts, but always a next check
     expect(core.getState()).toBe('error');
     expect(calls.playerPlay.length).toBe(playsBefore);
-    expect([...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS)).toBe(true);
+    expect(clock.hasScheduled(RECOVERY_DELAY_MS)).toBe(true);
 
     // Net comes back — the very next check recovers playback on its own
     online = true;
     deps._setPlayerPlayResult(Promise.resolve());
-    fireTimer(deps, RECOVERY_DELAY_MS);
+    clock.increment(RECOVERY_DELAY_MS);
     await flushPromises();
     expect(core.getState()).toBe('playing');
   });
@@ -1061,7 +1087,7 @@ describe('recovery backoff', () => {
 describe('playback watchdog', () => {
   it('does nothing while playback progresses', async () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -1076,7 +1102,7 @@ describe('playback watchdog', () => {
 
   it('restarts the stream when playback time freezes', async () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -1091,14 +1117,14 @@ describe('playback watchdog', () => {
     expect(core.getState()).toBe('retrying');
 
     // The normal retry cycle then recovers playback
-    fireTimer(deps, 3000);
+    clock.increment(3000);
     await flushPromises();
     expect(core.getState()).toBe('playing');
   });
 
   it('a moment of progress resets the stall countdown', async () => {
     const { deps, calls } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -1117,7 +1143,7 @@ describe('playback watchdog', () => {
 
   it('stops watching when paused or stopped', async () => {
     const { deps } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -1152,7 +1178,7 @@ describe('system pause vs user pause', () => {
   it('a pause the user asked for stays paused, even offline', async () => {
     let online = true;
     const { deps, calls } = makeDeps({ isOnline: () => online });
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -1168,7 +1194,7 @@ describe('system pause vs user pause', () => {
   it('an unexpected native pause while offline goes to retrying with the loading sound', async () => {
     let online = true;
     const { deps, calls } = makeDeps({ isOnline: () => online });
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -1183,7 +1209,7 @@ describe('system pause vs user pause', () => {
   it('the offline retry lands in error with the error sound and keeps recovering', async () => {
     let online = true;
     const { deps, calls } = makeDeps({ isOnline: () => online });
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -1192,20 +1218,20 @@ describe('system pause vs user pause', () => {
     core.onPlayerPause();
     expect(core.getState()).toBe('retrying');
 
-    fireTimer(deps, 3000);   // the scheduled retry runs while still offline
+    clock.increment(3000);   // the scheduled retry runs while still offline
     expect(core.getState()).toBe('error');
     expect(calls.errorSound.at(-1)).toBe('play');
     expect(calls.errorMsg.at(-1)).toBe(true);
 
     // Silent recovery is scheduled — the radio never gives up
-    fireTimer(deps, RECOVERY_DELAY_MS);
+    clock.increment(RECOVERY_DELAY_MS);
     expect(core.getState()).toBe('error'); // still offline: fixed-cadence recheck
-    expect([...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS)).toBe(true);
+    expect(clock.hasScheduled(RECOVERY_DELAY_MS)).toBe(true);
   });
 
   it('an unexpected native pause while online still pauses (interruption, unplugged headphones)', async () => {
     const { deps } = makeDeps();
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -1218,7 +1244,7 @@ describe('system pause vs user pause', () => {
   it('user pause intent expires after USER_PAUSE_INTENT_MS', async () => {
     let online = true;
     const { deps, calls } = makeDeps({ isOnline: () => online });
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
@@ -1240,7 +1266,7 @@ describe('sound supervisor', () => {
   it('re-asserts the loading sound while loading', async () => {
     const { deps, calls } = makeDeps();
     deps._setPlayerPlayResult(new Promise(() => {})); // stream never connects
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     expect(core.getState()).toBe('loading');
@@ -1251,7 +1277,7 @@ describe('sound supervisor', () => {
 
   it('re-asserts the error sound while in error', async () => {
     const { deps, calls } = makeDeps({ isOnline: () => false });
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0); // offline → straight to error
     expect(core.getState()).toBe('error');
@@ -1262,7 +1288,7 @@ describe('sound supervisor', () => {
 
   it('the error sound stays audible indefinitely — never muted, never stopped', async () => {
     const { deps, calls } = makeDeps({ isOnline: () => false });
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     expect(core.getState()).toBe('error');
@@ -1274,7 +1300,7 @@ describe('sound supervisor', () => {
     tickSupervisor(deps, 5);
     expect(calls.errorSound.at(-1)).toBe('ensure');
     expect(calls.errorSound).not.toContain('mute');
-    expect([...deps._pendingTimers.values()].some(t => t.ms === RECOVERY_DELAY_MS)).toBe(true);
+    expect(clock.hasScheduled(RECOVERY_DELAY_MS)).toBe(true);
   });
 
   it('starts the error sound BEFORE stopping the loading sound (no audio-session gap)', async () => {
@@ -1288,11 +1314,11 @@ describe('sound supervisor', () => {
     });
     const { deps } = makeDeps({ loadingSound: sound('loading'), errorSound: sound('error') });
     deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);          // loading (loading:play)
     await flushPromises();      // retrying
-    fireTimer(deps, 3000);      // retry fails → error
+    clock.increment(3000);      // retry fails → error
     await flushPromises();
     expect(core.getState()).toBe('error');
 
@@ -1304,7 +1330,7 @@ describe('sound supervisor', () => {
 
   it('the supervisor stops outside sound states', async () => {
     const { deps } = makeDeps({ isOnline: () => false });
-    const core = createRadioCore(deps);
+    const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     expect(core.getState()).toBe('error');
