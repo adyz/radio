@@ -372,7 +372,7 @@ let lastMediaMetadataInit: MediaMetadataInit | null = null;
 let metadataReassertTimer: number | null = null;
 
 function reassertMediaMetadata() {
-  if (!lastMediaMetadataInit) return;
+  if (!('mediaSession' in navigator) || !lastMediaMetadataInit) return;
   // Deferred (and deduped): WebKit refreshes its Now Playing info right after
   // media element events — metadata assigned synchronously inside a
   // 'play'/'playing'/'pause' handler gets clobbered by that refresh.
@@ -500,7 +500,10 @@ const updateMediaSession = (newState: RadioState) => {
     lastMediaMetadataInit = {
       title: isLoading ? `${LABELS.loading}${title}` : hasError ? `${LABELS.error} la încărcarea ${title}` : isIdle ? idleText : title,
       artist: `${LABELS.appName}${isIdle && !hasRestoredStation ? '' : ` | ${title}`}`,
-      artwork: [{ src: cloudinaryImageUrl(displayText, isLive) }]
+      // The OS fetches the artwork itself (bypassing our SW cache) — offline,
+      // a failing artwork fetch can take the whole Now Playing entry with it.
+      // Better a title without an image than neither.
+      artwork: navigator.onLine ? [{ src: cloudinaryImageUrl(displayText, isLive) }] : []
     };
     navigator.mediaSession.metadata = new MediaMetadata(lastMediaMetadataInit);
 
@@ -614,7 +617,14 @@ player.addEventListener('pause', () => {
     }
   }
   core.onPlayerPause();
+  // The main element pausing (or dying entirely on stream failure) triggers
+  // WebKit's own Now Playing refresh — put our metadata back after it.
+  reassertMediaMetadata();
 });
+
+// WebKit also refreshes Now Playing when the main element's source is
+// cleared (stopRadio / offline error path sets src='').
+player.addEventListener('emptied', () => reassertMediaMetadata());
 
 // Stream failure during playback (lost WiFi, server died, etc.)
 // Silent failures (no 'error' event, audio just stops — common on HLS and
