@@ -43,10 +43,12 @@ cu restul assets-urilor — nicio asertiune si niciun flow modificat).
 Obiectiv: un singur tool pentru dev server, bundling, minificare si Tailwind.
 
 Abateri fata de planul initial, decise la implementare:
-- Output-ul ramane in `public/` (nu `dist/`): `vercel.json` ruteaza deja spre
-  `/public/$1` si `public/` era DEJA in `.gitignore` (build-ul nu era comis in
-  git) — schimbarea folderului ar fi adaugat doar risc de deploy, fara castig.
-  `vercel.json` ramane neatins.
+- Output-ul e in `dist/`, conform planului initial. O prima tentativa de a-l
+  pastra in `public/` (prudenta fata de vercel.json#routes) a picat la deploy:
+  odata ce exista vite.config, Vercel auto-detecteaza framework-ul Vite si
+  serveste output directory-ul standard (`dist/`), ignorand modelul legacy cu
+  `routes` spre `/public/$1`. Fix: `routes` scos din vercel.json (header-ele
+  raman), fara `outputDirectory` explicit — default-ul preset-ului Vite e dist.
 - Bundle-ul de intrare iese `js/index.js` (Rollup il numeste dupa `index.html`),
   nu `js/script.js` — `APP_SHELL` din sw.js actualizat corespunzator; numele
   ramane stabil si dupa fazele urmatoare.
@@ -86,7 +88,7 @@ Fisiere: `vite.config.js`, `package.json`, `vercel.json`, `.gitignore`,
 (doar webServer), stergem `build.mjs`, mutam assets in `src/public/`.
 
 Verificari (efectuate):
-- `npm run build` produce `public/` cu structura asteptata: CSS inline in html
+- `npm run build` produce `dist/` cu structura asteptata: CSS inline in html
   (zero link-uri stylesheet), `js/index.js` + `js/keepAlive.js`, sw.js la root,
   sounds/, images/, downloads/, manifest.json; console.log eliminat din bundle.
 - `npm test` 53/53; `npm run test:e2e` 35/35 fara nicio modificare de logica

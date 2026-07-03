@@ -37,9 +37,10 @@ export default defineConfig({
   // sounds/, images/, downloads/, js/keepAlive.js (worker loaded by URL).
   publicDir: 'public',
   build: {
-    // Build straight into public/ at the repo root — the folder Vercel serves
-    // (vercel.json routes to /public/$1). Not tracked in git; rebuilt on deploy.
-    outDir: '../public',
+    // Vercel auto-detects Vite and serves the framework output directory
+    // (vercel.json#outputDirectory) — the legacy routes-to-/public model
+    // no longer applies once a vite.config exists.
+    outDir: '../dist',
     emptyOutDir: true,
     rollupOptions: {
       output: {
