@@ -135,13 +135,40 @@ async function getSoundResponse(src: string): Promise<Response> {
   return response;
 }
 
-function audioInstance(htmlElement: HTMLAudioElement) {
+interface SfxInstance {
+  play(): void;
+  stop(): void;
+  ensure(): void;
+  warmUp(): void;
+  preloadBlob(): Promise<string | null>;
+  isStartPending(): boolean;
+  onStartSettled(callback: () => void): void;
+  setPartner(partner: SfxInstance): void;
+}
+
+function audioInstance(htmlElement: HTMLAudioElement): SfxInstance {
   let initialSrc = htmlElement.querySelector('source')!.src;
   let isPlaying = false;
   let blobUrl: string | null = null;
   let playGeneration = 0;
   let preloadPromise: Promise<string | null> | null = null;
   htmlElement.dataset.blobReady = 'false';
+
+  // --- Graceful handoff state ---
+  // iOS kills the app's audio session in any gap of silence and then denies
+  // the next play(). When this sound replaces its partner (loading <-> error),
+  // the partner keeps playing until THIS element actually produces audio
+  // ('playing' event) — only then does the partner's deferred stop run.
+  let partner: SfxInstance | null = null;
+  let startPending = false;
+  let stopDeferGeneration = 0;
+  const startSettlers: Array<() => void> = [];
+
+  const settleStart = () => {
+    startPending = false;
+    while (startSettlers.length) startSettlers.shift()!();
+  };
+  htmlElement.addEventListener('playing', settleStart);
 
   const preloadBlob = () => {
     if (blobUrl) return Promise.resolve(blobUrl);
@@ -179,7 +206,11 @@ function audioInstance(htmlElement: HTMLAudioElement) {
   };
 
   const play = () => {
+    // Any play intent cancels a deferred stop queued for this instance
+    // (e.g. error → loading → error flapping while the partner never started).
+    stopDeferGeneration++;
     if (!isPlaying) {
+      startPending = true;
       const gen = ++playGeneration;
       isPlaying = true;
       if (blobUrl) {
@@ -190,13 +221,32 @@ function audioInstance(htmlElement: HTMLAudioElement) {
     }
   };
 
+  const doStop = () => {
+    playGeneration++;
+    htmlElement.pause();
+    htmlElement.src = '';
+    isPlaying = false;
+  };
+
   return {
     play,
     stop() {
-      playGeneration++;
-      htmlElement.pause();
-      htmlElement.src = '';
-      isPlaying = false;
+      // This sound will never start now — release anyone waiting on it
+      // (the partner's own deferred stop), so a user stop silences BOTH.
+      startPending = false;
+      settleStart();
+
+      // Handoff: if the replacement sound was asked to play but hasn't
+      // produced audio yet, keep this one playing until it does — a gap of
+      // silence here is where iOS would deny the replacement's play().
+      if (partner?.isStartPending()) {
+        const deferGen = ++stopDeferGeneration;
+        partner.onStartSettled(() => {
+          if (deferGen === stopDeferGeneration) doStop();
+        });
+        return;
+      }
+      doStop();
     },
     // Self-healing: called periodically by the core's sound supervisor while
     // this sound is supposed to be audible. Restarts playback if a play()
@@ -231,11 +281,21 @@ function audioInstance(htmlElement: HTMLAudioElement) {
       }).catch(() => {});
     },
     preloadBlob,
+    isStartPending: () => startPending,
+    onStartSettled(callback: () => void) {
+      startSettlers.push(callback);
+    },
+    setPartner(p: SfxInstance) {
+      partner = p;
+    },
   };
 }
 
 const loadingNoiseInstance = audioInstance(loadingNoise);
 const errorNoiseInstance = audioInstance(errorNoise);
+// Each sound hands off gracefully to the other (see audioInstance.stop()).
+loadingNoiseInstance.setPartner(errorNoiseInstance);
+errorNoiseInstance.setPartner(loadingNoiseInstance);
 
 // Eagerly preload sound blobs so loading/error feedback can start from memory.
 // fetch() doesn't need a user gesture — only playback does.

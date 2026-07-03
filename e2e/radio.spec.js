@@ -680,8 +680,10 @@ test.describe('Offline — cached resources', () => {
     await expect(c.errorMsg).toBeVisible({ timeout: 3000 });
     await expectSoundPlaying(page, 'errorNoise');
 
-    const loadingPaused = await page.evaluate(() => document.getElementById('loadingNoise').paused);
-    expect(loadingPaused).toBe(true);
+    // The loading sound hands off gracefully: it may keep playing for the few
+    // ms until the error sound actually produces audio (iOS session handoff),
+    // but once the error sound is on, the loading one must fall silent.
+    await page.waitForFunction(() => document.getElementById('loadingNoise').paused, { timeout: 3000 });
   });
 
   test('error sound plays while offline, with no sound network request', async ({ page }) => {

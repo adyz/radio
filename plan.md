@@ -127,6 +127,13 @@ dat pauza. Cauze gasite si fixate (branch `fix/always-audible-offline`):
    suprapunere) — golul de tacere dintre stop si play era exact locul unde
    iOS refuza play() in background/lock screen. (banuit vinovat pentru
    "eroarea nu se aude pe lock screen desi loading da")
+6. Handoff real intre sunete (branch `fix/sound-handoff`): play() doar
+   INITIAZA pornirea (async) — punctul 5 nu garanta suprapunerea. Acum
+   stop()-ul sunetului vechi se amana pana cand cel nou emite efectiv
+   'playing'; daca iOS refuza pornirea, cel vechi continua sa cante
+   (invariantul: orice sunet > liniste) iar supervizorul reincearca.
+   Testul e2e 'offline station change...' actualizat la noua semantica
+   (asteapta finalizarea handoff-ului, nu opririle instantanee).
 
 Teste: 63 unit (incl. 'error sound stays audible indefinitely' si testul de
 ordine play-inainte-de-stop), 37 e2e — cele 35 vechi neatinse si verzi.
