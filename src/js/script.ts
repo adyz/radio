@@ -369,11 +369,20 @@ function registerMediaSessionHandlers() {
 // changes (sound handoffs/hijacks), because macOS ties the Now Playing widget
 // to the active element and drops the metadata when a different one takes over.
 let lastMediaMetadataInit: MediaMetadataInit | null = null;
+let metadataReassertTimer: number | null = null;
 
 function reassertMediaMetadata() {
-  if (lastMediaMetadataInit) {
-    navigator.mediaSession.metadata = new MediaMetadata(lastMediaMetadataInit);
-  }
+  if (!lastMediaMetadataInit) return;
+  // Deferred (and deduped): WebKit refreshes its Now Playing info right after
+  // media element events — metadata assigned synchronously inside a
+  // 'play'/'playing'/'pause' handler gets clobbered by that refresh.
+  if (metadataReassertTimer !== null) clearTimeout(metadataReassertTimer);
+  metadataReassertTimer = setTimeout(() => {
+    metadataReassertTimer = null;
+    if (lastMediaMetadataInit) {
+      navigator.mediaSession.metadata = new MediaMetadata(lastMediaMetadataInit);
+    }
+  }, 150);
 }
 
 function reRegisterMediaSessionHandlers() {
