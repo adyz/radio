@@ -142,6 +142,31 @@ SW-urile NU raman "pe viata": no-cache + reg.update() + skipWaiting/claim +
 stergerea cache-urilor radio-* vechi la activate. Forcarea invalidarii la
 useri = bump la cele 3 constante de versiune (facut: app-v3/images-v3/sounds-v2).
 
+## Episodul handoff/carry (PR #41 — REVERTAT integral, decizia lui Adrian)
+
+S-a construit si VERIFICAT PE IPHONE un mecanism care facea sunetul de eroare
+audibil din prima pe lock screen (handoff cu stop amanat + "carry": elementul
+de loading isi schimba src-ul la tonul de eroare). Revertat pentru ca
+contrazice filozofia proiectului: state machine = precizie, fara sunete
+suprapuse, fara coordonare event-driven estimata in stratul DOM.
+
+Cunostinte castigate (valabile, de refolosit):
+- iOS in background REFUZA orice pornire proaspata de element audio, dar
+  PERMITE unui element care deja canta sa-si schimbe src si sa continue.
+- Web Audio API a fost deja incercat si revertat istoric (69a58f2): iOS
+  pierde sesiunea fara un <audio> activ. Elementele separate loading/error
+  si re-inregistrarea handler-elor MediaSession (d798cc9) sunt deliberate.
+- Evenimentul window 'offline' poate porni pipeline-ul instant (fara ~6s de
+  watchdog) — idee buna, de reintrodus curat candva.
+- Widget-ul Now Playing pe macOS ramane gol la eroare offline (3 fix-uri
+  incercate si revertate) — limitare cunoscuta.
+
+Directia agreata daca se reia: UN SINGUR element <audio> de feedback ("canal")
+cu `tone: 'loading'|'error'|'none'` in STATE_FX — overlap imposibil prin
+constructie, schimbarea de ton = swap de src pe elementul care deja canta
+(exact continuarea permisa de iOS). De facut eventual in Faza 4 (XState),
+cu re-validare completa pe device.
+
 ## Faza 2: TypeScript [gata]
 
 Obiectiv: type safety pe contractul core <-> DOM, fara nicio schimbare de logica.
@@ -178,10 +203,25 @@ Fisiere: `tsconfig.json`, `package.json`, redenumirile din `src/js/`,
 Verificari: `npm run typecheck` curat, `npm test` verde (aceleasi teste),
 `npm run build` verde, e2e 23/23 neatins.
 
-## Faza 3: modularizare script.ts
+## Faza 3: modularizare script.ts [gata]
 
 Obiectiv: spargem glue-ul DOM de 700+ linii in module cu responsabilitate unica.
 Zero schimbare de comportament — doar mutare de cod si import/export.
+
+Note de implementare (branch `faza3-modularizare`):
+- In plus fata de planul initial: `src/js/dom.ts` (helper-ul el<T> + toate
+  referintele DOM partajate) — mediaSession/selector au nevoie de aceleasi
+  elemente ca main, iar importul dintr-un singur loc pastreaza comportamentul
+  (lookup la load) fara parametri plimbati peste tot.
+- `updateMediaSession` NU mai apeleaza maybeReloadForPendingServiceWorkerUpdate
+  (dependenta mediaSession -> serviceWorker taiata): main compune cele doua in
+  deps.updateMediaSession, in aceeasi ordine ca inainte.
+- Ciclul core <-> mediaSession rezolvat prin initMediaSession (inainte de
+  createRadioCore, pentru hasRestoredStation) + connectMediaSessionCore (dupa).
+- Bundle-ul ramane un singur chunk `js/index.js` (importuri statice) — APP_SHELL
+  din sw.js neschimbat, fara bump de cache.
+- Verificat: typecheck curat, 63/63 unit, build identic ca structura, 37/37 e2e
+  NEATINSE, smoke complet pe vite preview.
 
 - `src/js/main.ts` — entry point: DOM refs, `createRadioCore(deps)`, event
   listeners pe butoane/player/online, wiring intre module.
