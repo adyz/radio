@@ -212,7 +212,7 @@ node --version  # should be v20.19.0 or newer
 ```
 
 ```bash
-npm run dev       # live-server + tailwind watch
+npm run dev       # vite dev server (include tailwind)
 npm test          # unit tests (vitest)
 npm run test:coverage  # unit coverage + raport HTML in coverage/index.html
 npm run test:e2e  # e2e tests (playwright, pornește singur serverul)

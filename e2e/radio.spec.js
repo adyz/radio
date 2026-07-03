@@ -46,7 +46,7 @@ async function mockStreams(page) {
     await route.fulfill({
       status: 200,
       contentType: 'audio/mpeg',
-      path: 'src/sounds/test-tone.mp3',
+      path: 'src/public/sounds/test-tone.mp3',
     });
   });
 }
@@ -66,7 +66,7 @@ async function mockStreamsDelayed(page, delayMs) {
     await route.fulfill({
       status: 200,
       contentType: 'audio/mpeg',
-      path: 'src/sounds/test-tone.mp3',
+      path: 'src/public/sounds/test-tone.mp3',
     });
   });
 }
@@ -311,7 +311,7 @@ test.describe('Radio Player E2E', () => {
         await route.fulfill({ status: 200, contentType: 'video/mp2t', body: HLS_TEST_SEGMENT });
         return;
       }
-      await route.fulfill({ status: 200, contentType: 'audio/mpeg', path: 'src/sounds/test-tone.mp3' });
+      await route.fulfill({ status: 200, contentType: 'audio/mpeg', path: 'src/public/sounds/test-tone.mp3' });
     });
 
     await page.goto('/');
@@ -715,7 +715,7 @@ test.describe('Offline — cached resources', () => {
         await route.fulfill({
           status: 200,
           contentType: 'audio/mpeg',
-          path: 'src/sounds/test-tone.mp3',
+          path: 'src/public/sounds/test-tone.mp3',
         });
       },
     );
