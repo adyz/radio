@@ -3,13 +3,16 @@
  * No knowledge of radio, DOM, or anything else.
  */
 
-export function createStateMachine(fxTable, effects) {
-  let state = null;
+export function createStateMachine<State extends string, Fx>(
+  fxTable: Record<State, Fx>,
+  effects: (fx: Fx, newState: State) => void,
+) {
+  let state: State | null = null;
 
   return {
     getState: () => state,
 
-    setState(newState) {
+    setState(newState: State) {
       const fx = fxTable[newState];
       if (!fx) throw new Error(`Unknown state: ${newState}`);
 

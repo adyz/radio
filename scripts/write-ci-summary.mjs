@@ -7,6 +7,7 @@ const summaryFile = path.join(reportsDir, 'ci-summary.md');
 const commentMarker = '<!-- radio-player-ci-summary -->';
 
 const outcomes = {
+  typecheck: process.env.TYPECHECK_OUTCOME || 'unknown',
   unit: process.env.UNIT_OUTCOME || 'unknown',
   build: process.env.BUILD_OUTCOME || 'unknown',
   playwright: process.env.PLAYWRIGHT_INSTALL_OUTCOME || 'unknown',
@@ -17,8 +18,14 @@ const unitReport = readJson(path.join(reportsDir, 'unit.json'));
 const e2eReport = readJson(path.join(reportsDir, 'e2e.json'));
 const coverageSummary = readJson(path.join(root, 'coverage', 'coverage-summary.json'));
 const buildLog = readText(path.join(reportsDir, 'build.log'));
+const typecheckLog = readText(path.join(reportsDir, 'typecheck.log'));
 
 const rows = [
+  {
+    check: 'Typecheck',
+    status: statusFor(outcomes.typecheck),
+    result: outcomes.typecheck === 'success' ? 'tsc --noEmit clean' : 'See typecheck logs',
+  },
   {
     check: 'Unit tests',
     status: statusFor(outcomes.unit, unitReport?.success === false),
@@ -152,6 +159,7 @@ function failureDetails() {
   const e2eFailures = getE2eFailures(e2eReport);
 
   if (
+    outcomes.typecheck !== 'success' ||
     outcomes.unit !== 'success' ||
     outcomes.build !== 'success' ||
     outcomes.playwright !== 'success' ||
@@ -160,6 +168,11 @@ function failureDetails() {
     e2eFailures.length
   ) {
     sections.push('## Failure details', '');
+  }
+
+  if (outcomes.typecheck === 'failure') {
+    sections.push('### Typecheck', '');
+    sections.push(...formatCodeBlock(lastLines(typecheckLog, 30) || 'Typecheck failed. See the workflow step logs.'), '');
   }
 
   if (unitFailures.length) {

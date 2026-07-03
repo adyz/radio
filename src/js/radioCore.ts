@@ -5,7 +5,69 @@
  * so this module can be tested without a browser.
  */
 
-import { createStateMachine } from './stateMachine.js';
+import { createStateMachine } from './stateMachine';
+
+export type RadioState =
+  | 'idle'
+  | 'loading'
+  | 'playing'
+  | 'paused'
+  | 'retrying'
+  | 'error'
+  | 'recovering';
+
+type PlaybackButton = 'play' | 'pause' | 'stop';
+type SoundFx = 'play' | 'stop' | 'keep';
+
+interface StateFx {
+  button: PlaybackButton;
+  loading: SoundFx;
+  error: SoundFx;
+  loadingMsg: boolean;
+  errorMsg: boolean;
+}
+
+/** A feedback sound (loading/error noise) the core can drive. */
+export interface FeedbackSound {
+  play(): void;
+  stop(): void;
+  /** Re-assert playback: restart if a play() was rejected or the OS paused it. */
+  ensure(): void;
+}
+
+type TimerId = number;
+
+/**
+ * Everything the core needs from the outside world. The DOM glue layer
+ * implements this against real elements; tests implement it with mocks.
+ */
+export interface RadioDeps {
+  getStationUrl(index: number): string;
+  getStationCount(): number;
+  getSelectedIndex(): number;
+  setSelectedIndex(index: number): void;
+  playerPlay(): Promise<void>;
+  playerPause(): void;
+  playerSetSrc(url: string): void;
+  playerLoad(): void;
+  playerIsPaused(): boolean;
+  playerCurrentTime(): number;
+  loadingSound: FeedbackSound;
+  errorSound: FeedbackSound;
+  showButton(which: PlaybackButton): void;
+  setLoadingMsg(visible: boolean): void;
+  setErrorMsg(visible: boolean): void;
+  updateMediaSession(state: RadioState): void;
+  saveLastIndex(index: number): void;
+  setTimeout(fn: () => void, ms: number): TimerId;
+  clearTimeout(id: TimerId | null): void;
+  setInterval(fn: () => void, ms: number): TimerId;
+  clearInterval(id: TimerId | null): void;
+  performanceNow(): number;
+  isOnline(): boolean;
+}
+
+export type RadioCore = ReturnType<typeof createRadioCore>;
 
 export const MAX_RETRIES = 1;
 export const LOADING_TIMEOUT_MS = 6000;
@@ -14,10 +76,9 @@ export const RECOVERY_DELAY_MAX_MS = 60000;
 export const WATCHDOG_INTERVAL_MS = 2000;
 export const WATCHDOG_STALL_TICKS = 3; // ≈6s of frozen playback ⇒ stream is dead
 export const SOUND_SUPERVISOR_INTERVAL_MS = 2500;
-export const ERROR_SOUND_AUDIBLE_MS = 60000; // audible error for at least a minute, then muted
 export const USER_PAUSE_INTENT_MS = 2000; // how long a pauseRadio() call explains a native 'pause'
 
-const STATE_FX = {
+const STATE_FX: Record<RadioState, StateFx> = {
   idle:       { button: 'play',  loading: 'stop',  error: 'stop',  loadingMsg: false, errorMsg: false },
   loading:    { button: 'stop',  loading: 'play',  error: 'stop',  loadingMsg: true,  errorMsg: false },
   playing:    { button: 'pause', loading: 'stop',  error: 'stop',  loadingMsg: false, errorMsg: false },
@@ -29,7 +90,7 @@ const STATE_FX = {
   recovering: { button: 'stop',  loading: 'stop',  error: 'keep',  loadingMsg: false, errorMsg: true  },
 };
 
-export function createRadioCore(deps) {
+export function createRadioCore(deps: RadioDeps) {
   const {
     getStationUrl,
     getStationCount,
@@ -56,33 +117,32 @@ export function createRadioCore(deps) {
     isOnline,
   } = deps;
 
-  const timers = { retry: null, loading: null, recovery: null, watchdog: null, soundSupervisor: null };
+  const timers: Record<'retry' | 'loading' | 'recovery' | 'watchdog' | 'soundSupervisor', TimerId | null> =
+    { retry: null, loading: null, recovery: null, watchdog: null, soundSupervisor: null };
   let retryCount = 0;
   let recoveryCount = 0;
   let currentPlayId = 0;
-  let lastPauseTime = null;
-  let userPauseIntentAt = null; // performanceNow() of the last pauseRadio() call
-  let errorSoundStartedAt = null; // when the current uninterrupted error cycle began
+  let lastPauseTime: number | null = null;
+  let userPauseIntentAt: number | null = null; // performanceNow() of the last pauseRadio() call
 
   // --- State machine (no radio knowledge) ---
 
   const { getState, setState } = createStateMachine(STATE_FX, (fx, newState) => {
     showButton(fx.button);
-    if (fx.loading !== 'keep') loadingSound[fx.loading]();
-    if (fx.error !== 'keep') errorSound[fx.error]();
+    // Start the new sound BEFORE stopping the old one: the brief overlap keeps
+    // the audio session continuously active, so iOS is far likelier to allow
+    // the new sound to start when the app is backgrounded/locked. A gap of
+    // silence between stop and play is exactly where play() gets denied.
+    if (fx.loading === 'play') loadingSound.play();
+    if (fx.error === 'play') errorSound.play();
+    if (fx.loading === 'stop') loadingSound.stop();
+    if (fx.error === 'stop') errorSound.stop();
     setLoadingMsg(fx.loadingMsg);
     setErrorMsg(fx.errorMsg);
     updateMediaSession(newState);
     // The watchdog only makes sense while we're supposed to be playing
     if (newState === 'playing') startWatchdog();
     else stopWatchdog();
-    // Track how long the user has been listening to the error sound —
-    // one uninterrupted error/recovering stretch counts as one cycle.
-    if (newState === 'error' || newState === 'recovering') {
-      if (errorSoundStartedAt === null) errorSoundStartedAt = performanceNow();
-    } else {
-      errorSoundStartedAt = null;
-    }
     // While a feedback sound is supposed to be audible, supervise it:
     // background restrictions can reject or pause <audio> playback silently.
     if (newState === 'loading' || newState === 'retrying' || newState === 'error' || newState === 'recovering') {
@@ -109,7 +169,7 @@ export function createRadioCore(deps) {
     playerSetSrc('');
   }
 
-  function playRadio(index, _isRetry) {
+  function playRadio(index: number, _isRetry?: boolean) {
     setSelectedIndex(index);
 
     _clearTimeout(timers.retry);
@@ -161,7 +221,7 @@ export function createRadioCore(deps) {
     });
   }
 
-  function handlePlayError(playId, index, error) {
+  function handlePlayError(playId: number, index: number, _error: Error) {
     if (retryCount < MAX_RETRIES) {
       retryCount++;
       setState('retrying');
@@ -194,8 +254,8 @@ export function createRadioCore(deps) {
     playerPause();
   }
 
-  function handleResumeError(error) {
-    if (error?.name === 'AbortError') return;
+  function handleResumeError(error: unknown) {
+    if ((error as { name?: string } | null | undefined)?.name === 'AbortError') return;
     try {
       playerPause();
     } catch (_) {
@@ -293,7 +353,7 @@ export function createRadioCore(deps) {
   // flaky wifi). The only reliable signal is playback progress itself: while
   // state is 'playing', currentTime must keep moving.
 
-  let watchdogLastTime = null;
+  let watchdogLastTime: number | null = null;
   let watchdogStallTicks = 0;
 
   function stopWatchdog() {
@@ -322,12 +382,11 @@ export function createRadioCore(deps) {
   }
 
   // --- Sound supervisor ---
-  // "As long as the user pressed play, something must be audible." Feedback
-  // sounds can silently fail to start (autoplay/background restrictions) or
-  // get paused by the OS. While a state demands a sound, re-assert it every
-  // tick; after ERROR_SOUND_AUDIBLE_MS of uninterrupted error, mute the error
-  // loop (it keeps looping silently so background timers/session stay alive
-  // and silent recovery can keep trying forever).
+  // "As long as the user pressed play, something must ALWAYS be audible" —
+  // stream, loading sound or error sound; silence only in idle/paused.
+  // Feedback sounds can silently fail to start (autoplay/background
+  // restrictions) or get paused by the OS, so while a state demands a sound,
+  // re-assert it on every tick, indefinitely.
 
   function stopSoundSupervisor() {
     _clearInterval(timers.soundSupervisor);
@@ -339,11 +398,7 @@ export function createRadioCore(deps) {
     if (s === 'loading' || s === 'retrying') {
       loadingSound.ensure();
     } else if (s === 'error' || s === 'recovering') {
-      if (errorSoundStartedAt !== null && performanceNow() - errorSoundStartedAt >= ERROR_SOUND_AUDIBLE_MS) {
-        errorSound.mute();
-      } else {
-        errorSound.ensure();
-      }
+      errorSound.ensure();
     }
   }
 

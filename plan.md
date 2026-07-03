@@ -119,21 +119,42 @@ dat pauza. Cauze gasite si fixate (branch `fix/always-audible-offline`):
    loading/retrying/error/recovering.
 3. 'retrying' avea loading:'keep' -> venind din watchdog stall, 3s de tacere.
    Fix: loading:'play'.
-4. Cerinta noua: sunetul de eroare audibil minim 1 minut (ERROR_SOUND_AUDIBLE_MS),
-   apoi mute() — elementul continua loop-ul MUT ca sa tina sesiunea media si
-   timerele vii in background, iar recovery-ul silentios continua la nesfarsit.
-   De validat pe iOS real daca loop-ul mut chiar previne suspendarea.
+4. RETRAS (branch `bump-cache-versions`): mute-ul erorii dupa 1 minut. Cerinta
+   finala a userului: NICIODATA liniste cat timp intentia de play e activa —
+   stream, loading sau eroare, la nesfarsit; liniste doar in idle/paused/stop.
+   Sunetul de eroare ramane audibil pana la recuperare sau stop/pauza.
+5. Ordinea efectelor la schimbarea sunetelor: play INAINTE de stop (scurta
+   suprapunere) — golul de tacere dintre stop si play era exact locul unde
+   iOS refuza play() in background/lock screen. (banuit vinovat pentru
+   "eroarea nu se aude pe lock screen desi loading da")
 
-Teste: 11 unit tests noi (64 total), 2 e2e noi (37 total) — cele 35 e2e vechi
-neatinse si verzi. Comportamentul e specificat executabil in describe-ul e2e
+Teste: 63 unit (incl. 'error sound stays audible indefinitely' si testul de
+ordine play-inainte-de-stop), 37 e2e — cele 35 vechi neatinse si verzi.
+Comportamentul e specificat executabil in describe-ul e2e
 'Offline mid-playback — always audible'.
 
 Nota pentru Faza 4 (XState): aceste comportamente (intentie pauza, supervisor,
-cap eroare) se porteaza ca events/guards/actori — testele raman dovada.
+ordinea play/stop) se porteaza ca events/guards/actori — testele raman dovada.
 
-## Faza 2: TypeScript
+Diagnostic cache productie (2026-07-03): www.coji.ro verificat sanatos —
+sw.js v2 servit cu no-cache, sunete byte-identice cu repo, referinte corecte.
+SW-urile NU raman "pe viata": no-cache + reg.update() + skipWaiting/claim +
+stergerea cache-urilor radio-* vechi la activate. Forcarea invalidarii la
+useri = bump la cele 3 constante de versiune (facut: app-v3/images-v3/sounds-v2).
+
+## Faza 2: TypeScript [gata]
 
 Obiectiv: type safety pe contractul core <-> DOM, fara nicio schimbare de logica.
+
+Note de implementare (branch `faza2-typescript`):
+- Importuri fara extensie (`./radioCore`) — compatibile si cu tsc si cu Vite.
+- `script.ts` foloseste un helper `el<T>(id)` care arunca la id lipsa — markup-ul
+  e al nostru, deci null-check-uri pe fiecare utilizare ar fi zgomot.
+- `core` e declarat cu definite assignment (`let core!: RadioCore`) — e atribuit
+  imediat sub declaratie, iar fereastra initiala e acoperita de guard-uri runtime.
+- Testul care da `undefined` din `playerPlay()` pastreaza incalcarea de contract
+  intentionat (cast explicit) — verifica robustetea runtime a lui resumePlayer.
+- Typecheck rulat in CI inainte de unit tests, cu log in summary + gate final.
 
 - `tsconfig.json` cu `strict: true`, `noEmit` (Vite face transpilarea, `tsc` doar
   verifica). Instalam `typescript`.

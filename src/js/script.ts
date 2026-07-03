@@ -1,28 +1,45 @@
 /**
- * Radio Player — DOM glue layer (uses radioCore.js state machine)
+ * Radio Player — DOM glue layer (uses the radioCore state machine)
  */
 
-import { createRadioCore } from './radioCore.js';
+import { createRadioCore, type RadioCore, type RadioState } from './radioCore';
+
+declare global {
+  interface Window {
+    electronAPI?: {
+      onMediaControl(callback: (command: string) => void): void;
+      updatePlaybackState(isPlaying: boolean): void;
+    };
+  }
+}
 
 document.addEventListener("touchstart", function () { }, true);
 
 // --- DOM refs ---
 
-const radioSelect = document.getElementById('radioSelect');
-const player = document.getElementById('player');
-const loadingNoise = document.getElementById('loadingNoise');
-const errorNoise = document.getElementById('errorNoise');
-const loadingMsg = document.getElementById('loadingMsg');
-const errorMsg = document.getElementById('errorMsg');
+// The markup is ours (src/index.html), so a missing id is a build-time bug —
+// fail loudly instead of null-checking every use site.
+function el<T extends HTMLElement>(id: string): T {
+  const node = document.getElementById(id);
+  if (!node) throw new Error(`Missing element: #${id}`);
+  return node as T;
+}
 
-const prevButton = document.getElementById('prevButton');
-const playButton = document.getElementById('playButton');
-const pauseButton = document.getElementById('pauseButton');
-const stopButton = document.getElementById('stopButton');
-const nextButton = document.getElementById('nextButton');
+const radioSelect = el<HTMLSelectElement>('radioSelect');
+const player = el<HTMLAudioElement>('player');
+const loadingNoise = el<HTMLAudioElement>('loadingNoise');
+const errorNoise = el<HTMLAudioElement>('errorNoise');
+const loadingMsg = el<HTMLElement>('loadingMsg');
+const errorMsg = el<HTMLElement>('errorMsg');
 
-const logoButton = document.getElementById('logoButton');
-const posterImage = document.getElementById('posterImage');
+const prevButton = el<HTMLButtonElement>('prevButton');
+const playButton = el<HTMLButtonElement>('playButton');
+const pauseButton = el<HTMLButtonElement>('pauseButton');
+const stopButton = el<HTMLButtonElement>('stopButton');
+const nextButton = el<HTMLButtonElement>('nextButton');
+
+const logoButton = el<HTMLButtonElement>('logoButton');
+const posterImage = el<HTMLButtonElement>('posterImage');
 
 // --- Cloudinary ---
 
@@ -35,9 +52,9 @@ const LABELS = {
 
 // Keep in sync with src/sw.js so page-level preloads and SW precache share
 // the same durable sound cache.
-const SOUND_CACHE_NAME = 'radio-sounds-v1';
+const SOUND_CACHE_NAME = 'radio-sounds-v2';
 
-function cloudinaryImageUrl(text, live = false) {
+function cloudinaryImageUrl(text: string, live = false) {
   const url_non_live = 'nndti4oybhdzggf8epvh';
   const url_live = 'rhz6yy4btbqicjqhsy7a';
   const encoded = encodeURIComponent(text);
@@ -50,7 +67,7 @@ const STATUS_IMAGE_TEXTS = [
   ...Array.from(radioSelect.options).map(o => o.text),
 ];
 if ('caches' in window) {
-  caches.open('radio-images-v2').then(cache => {
+  caches.open('radio-images-v3').then(cache => {
     STATUS_IMAGE_TEXTS.forEach(text => {
       const url = cloudinaryImageUrl(text);
       cache.match(url)
@@ -68,7 +85,7 @@ if ('caches' in window) {
 
 // Restore last station before anything reads selectedIndex
 function getStoredStationIndex() {
-  const parsed = Number.parseInt(localStorage.getItem('lastRadioIndex'), 10);
+  const parsed = Number.parseInt(localStorage.getItem('lastRadioIndex') ?? '', 10);
   if (!Number.isInteger(parsed)) return null;
   if (parsed < 0 || parsed >= radioSelect.options.length) return null;
   return parsed;
@@ -94,7 +111,7 @@ async function openSoundCache() {
   }
 }
 
-async function cacheSoundResponse(src, response) {
+async function cacheSoundResponse(src: string, response: Response) {
   try {
     const cache = await openSoundCache();
     if (cache) await cache.put(src, response.clone());
@@ -103,7 +120,7 @@ async function cacheSoundResponse(src, response) {
   }
 }
 
-async function getSoundResponse(src) {
+async function getSoundResponse(src: string): Promise<Response> {
   const cache = await openSoundCache();
   try {
     const cached = await cache?.match(src);
@@ -113,18 +130,17 @@ async function getSoundResponse(src) {
   }
 
   const response = await fetch(src);
-  if (!response.ok) throw new Error(response.status);
+  if (!response.ok) throw new Error(String(response.status));
   await cacheSoundResponse(src, response);
   return response;
 }
 
-function audioInstance(htmlElement) {
-  let initialSrc = htmlElement.querySelector('source').src;
+function audioInstance(htmlElement: HTMLAudioElement) {
+  let initialSrc = htmlElement.querySelector('source')!.src;
   let isPlaying = false;
-  let isMuted = false;
-  let blobUrl = null;
+  let blobUrl: string | null = null;
   let playGeneration = 0;
-  let preloadPromise = null;
+  let preloadPromise: Promise<string | null> | null = null;
   htmlElement.dataset.blobReady = 'false';
 
   const preloadBlob = () => {
@@ -150,10 +166,9 @@ function audioInstance(htmlElement) {
     return preloadPromise;
   };
 
-  const startPlayback = (gen) => {
+  const startPlayback = (gen: number) => {
     if (gen !== playGeneration || !isPlaying) return;
     htmlElement.volume = 1;
-    htmlElement.muted = isMuted;
     htmlElement.src = blobUrl || initialSrc;
     htmlElement.currentTime = 0;
     htmlElement.play().catch((error) => {
@@ -165,8 +180,6 @@ function audioInstance(htmlElement) {
 
   const play = () => {
     if (!isPlaying) {
-      isMuted = false;
-      htmlElement.muted = false;
       const gen = ++playGeneration;
       isPlaying = true;
       if (blobUrl) {
@@ -184,8 +197,6 @@ function audioInstance(htmlElement) {
       htmlElement.pause();
       htmlElement.src = '';
       isPlaying = false;
-      isMuted = false;
-      htmlElement.muted = false;
     },
     // Self-healing: called periodically by the core's sound supervisor while
     // this sound is supposed to be audible. Restarts playback if a play()
@@ -202,12 +213,6 @@ function audioInstance(htmlElement) {
           if (error.name !== 'AbortError') isPlaying = false; // retried next tick
         });
       }
-    },
-    // Keeps looping, but silently — playback continuing is what keeps the
-    // media session and background timers alive during long error stretches.
-    mute() {
-      isMuted = true;
-      htmlElement.muted = true;
     },
     warmUp() {
       if (isPlaying) return;
@@ -313,7 +318,7 @@ function preloadAudioBlobs() {
 
 // --- UI helpers ---
 
-function isPlaybackControl(element) {
+function isPlaybackControl(element: Element | null) {
   return element === playButton || element === pauseButton || element === stopButton;
 }
 
@@ -322,7 +327,7 @@ function focusInitialPlaybackControl() {
   playButton.focus();
 }
 
-const showButton = (which) => {
+const showButton = (which: 'play' | 'pause' | 'stop') => {
   const shouldPreserveFocus = isPlaybackControl(document.activeElement);
   const nextButton = which === 'play' ? playButton : which === 'pause' ? pauseButton : stopButton;
 
@@ -333,8 +338,10 @@ const showButton = (which) => {
   if (shouldPreserveFocus) nextButton.focus();
 };
 
-// core reference — set after createRadioCore(), used by updateMediaSession
-let core = null;
+// core reference — assigned right below, but updateMediaSession runs once
+// during createRadioCore() itself (initial setState('idle')), before the
+// assignment lands; the `if (core)` runtime guards cover that window.
+let core!: RadioCore;
 
 let pendingServiceWorkerReload = false;
 let serviceWorkerReloaded = false;
@@ -346,7 +353,7 @@ function reloadForServiceWorkerUpdate() {
   window.location.reload();
 }
 
-function maybeReloadForPendingServiceWorkerUpdate(newState) {
+function maybeReloadForPendingServiceWorkerUpdate(newState: RadioState) {
   if (pendingServiceWorkerReload && newState === 'idle') reloadForServiceWorkerUpdate();
 }
 
@@ -359,7 +366,7 @@ function requestServiceWorkerReload() {
   pendingServiceWorkerReload = true;
 }
 
-const updateMediaSession = (newState) => {
+const updateMediaSession = (newState: RadioState) => {
   const title = radioSelect.options[radioSelect.selectedIndex].text;
   const isIdle = newState === 'idle';
   const isLoading = newState === 'loading' || newState === 'retrying';
@@ -393,7 +400,7 @@ const updateMediaSession = (newState) => {
     }
   }
 
-  posterImage.querySelector('img').src = cloudinaryImageUrl(displayText, isLive);
+  posterImage.querySelector('img')!.src = cloudinaryImageUrl(displayText, isLive);
   document.title = `${isLoading ? "⏳" : ''} ${hasError ? '❤️‍🩹' : ''} ${isLive ? '🔴' : ''} ${isIdle ? idleText : isLoading ? `${LABELS.loading} ${title}` : hasError ? LABELS.error : title}`;
   loadingMsg.innerText = isLoading ? `${LABELS.loading} ${title}` : '';
   maybeReloadForPendingServiceWorkerUpdate(newState);
@@ -416,11 +423,11 @@ core = createRadioCore({
   setLoadingMsg:    (v) => loadingMsg.classList.toggle('invisible', !v),
   setErrorMsg:      (v) => errorMsg.classList.toggle('invisible', !v),
   updateMediaSession,
-  saveLastIndex:    (i) => localStorage.setItem('lastRadioIndex', i),
+  saveLastIndex:    (i) => localStorage.setItem('lastRadioIndex', String(i)),
   setTimeout,
-  clearTimeout,
+  clearTimeout:  (id) => clearTimeout(id ?? undefined),
   setInterval,
-  clearInterval,
+  clearInterval: (id) => clearInterval(id ?? undefined),
   performanceNow:   () => performance.now(),
   isOnline:          () => navigator.onLine,
 });
@@ -428,8 +435,8 @@ focusInitialPlaybackControl();
 
 // --- Event listeners ---
 
-radioSelect.addEventListener('change', (e) => {
-  if (e.target.value) {
+radioSelect.addEventListener('change', () => {
+  if (radioSelect.value) {
     core.playRadio(radioSelect.selectedIndex);
   } else {
     core.stopRadio();
@@ -437,8 +444,9 @@ radioSelect.addEventListener('change', (e) => {
 });
 
 // Electron
-if (window.electronAPI) {
-  window.electronAPI.onMediaControl((command) => {
+const electronAPI = window.electronAPI;
+if (electronAPI) {
+  electronAPI.onMediaControl((command) => {
     if (command === "playpause") {
       core.togglePlayPause();
     } else if (command === "next") {
@@ -450,7 +458,7 @@ if (window.electronAPI) {
 
   document.addEventListener("DOMContentLoaded", () => {
     const updatePlaybackState = () =>
-      window.electronAPI.updatePlaybackState(core.getState() === 'playing');
+      electronAPI.updatePlaybackState(core.getState() === 'playing');
     player.addEventListener("play", updatePlaybackState);
     player.addEventListener("pause", updatePlaybackState);
   });
@@ -560,15 +568,16 @@ updateThemeColor();
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeColor);
 
 // Custom selector UI
-const new_selector_open_button = document.getElementById('new_selector__button');
-const new_selector_content = document.getElementById('new_selector__content');
-const new_selector_button_example = document.getElementById('new_selector__button_example');
+const new_selector_open_button = el<HTMLButtonElement>('new_selector__button');
+const new_selector_content = el<HTMLElement>('new_selector__content');
+const new_selector_button_example = el<HTMLButtonElement>('new_selector__button_example');
+const new_selector_parent = el<HTMLElement>('new_selector__parent');
 
 const radios = radioSelect.querySelectorAll('option');
-const selectorOptionButtons = [];
+const selectorOptionButtons: HTMLButtonElement[] = [];
 let selectorFocusedIndex = radioSelect.selectedIndex;
-let selectorReturnFocusElement = new_selector_open_button;
-const selectorTriggerButtons = [new_selector_open_button, posterImage];
+let selectorReturnFocusElement: HTMLElement = new_selector_open_button;
+const selectorTriggerButtons: HTMLElement[] = [new_selector_open_button, posterImage];
 
 logoButton.addEventListener('click', () => {
   window.location.reload();
@@ -588,7 +597,7 @@ function syncSelectorSelection() {
   });
 }
 
-function focusOption(index) {
+function focusOption(index: number) {
   if (!selectorOptionButtons.length) return;
 
   const lastIndex = selectorOptionButtons.length - 1;
@@ -610,7 +619,7 @@ function focusOption(index) {
   });
 }
 
-function setSelectorExpanded(isExpanded) {
+function setSelectorExpanded(isExpanded: boolean) {
   selectorTriggerButtons.forEach(el => {
     el.setAttribute('aria-expanded', String(isExpanded));
   });
@@ -621,8 +630,8 @@ function getCurrentSelectorIndex() {
   return index >= 0 && index < selectorOptionButtons.length ? index : 0;
 }
 
-function openSelector({ focusSelected = false, trigger = document.activeElement } = {}) {
-  if (selectorTriggerButtons.includes(trigger)) {
+function openSelector({ focusSelected = false, trigger = document.activeElement }: { focusSelected?: boolean; trigger?: Element | null } = {}) {
+  if (trigger instanceof HTMLElement && selectorTriggerButtons.includes(trigger)) {
     selectorReturnFocusElement = trigger;
   }
   selectorFocusedIndex = getCurrentSelectorIndex();
@@ -640,9 +649,9 @@ function openSelector({ focusSelected = false, trigger = document.activeElement 
   }
 }
 
-function closeSelector({ returnFocus = false, blurHiddenFocus = false } = {}) {
+function closeSelector({ returnFocus = false, blurHiddenFocus = false }: { returnFocus?: boolean; blurHiddenFocus?: boolean } = {}) {
   const activeElement = document.activeElement;
-  const shouldBlurHiddenFocus = blurHiddenFocus && activeElement && document.getElementById('new_selector__parent').contains(activeElement);
+  const shouldBlurHiddenFocus = blurHiddenFocus && activeElement instanceof HTMLElement && new_selector_parent.contains(activeElement);
   new_selector_content.classList.add('hidden');
   setSelectorExpanded(false);
   syncSelectorSelection();
@@ -650,12 +659,12 @@ function closeSelector({ returnFocus = false, blurHiddenFocus = false } = {}) {
   else if (shouldBlurHiddenFocus) activeElement.blur();
 }
 
-function toggleSelector(trigger) {
+function toggleSelector(trigger: Element) {
   if (isSelectorOpen()) closeSelector();
   else openSelector({ focusSelected: true, trigger });
 }
 
-function selectOption(index) {
+function selectOption(index: number) {
   preloadAudioBlobs();
   loadingNoiseInstance.warmUp();
   errorNoiseInstance.warmUp();
@@ -666,7 +675,7 @@ function selectOption(index) {
 }
 
 radios.forEach((radio, index) => {
-  const new_button = new_selector_button_example.cloneNode(true);
+  const new_button = new_selector_button_example.cloneNode(true) as HTMLButtonElement;
   new_button.id = `new_selector__option_${index}`;
   new_button.setAttribute('role', 'option');
   new_button.setAttribute('aria-selected', 'false');
@@ -685,7 +694,7 @@ syncSelectorSelection();
 
 selectorTriggerButtons.forEach(el => el.addEventListener('click', () => toggleSelector(el)));
 
-function handleSelectorTriggerKeydown(e) {
+function handleSelectorTriggerKeydown(e: KeyboardEvent) {
   if (e.key === 'ArrowDown' && isSelectorOpen()) {
     e.preventDefault();
     focusOption(selectorFocusedIndex + 1);
@@ -700,7 +709,7 @@ function handleSelectorTriggerKeydown(e) {
 
   if (!['Enter', ' '].includes(e.key)) return;
   e.preventDefault();
-  openSelector({ focusSelected: true, trigger: e.currentTarget });
+  openSelector({ focusSelected: true, trigger: e.currentTarget as Element });
 }
 
 selectorTriggerButtons.forEach(el => el.addEventListener('keydown', handleSelectorTriggerKeydown));
@@ -730,8 +739,8 @@ new_selector_content.addEventListener('keydown', (e) => {
   }
 });
 
-document.getElementById('new_selector__parent').addEventListener('focusout', (e) => {
-  if (!e.currentTarget.contains(e.relatedTarget)) closeSelector();
+new_selector_parent.addEventListener('focusout', (e) => {
+  if (!new_selector_parent.contains(e.relatedTarget as Node | null)) closeSelector();
 });
 
 document.addEventListener('keydown', (e) => {
@@ -741,7 +750,8 @@ document.addEventListener('keydown', (e) => {
 });
 
 document.addEventListener('click', (e) => {
-  if (!new_selector_content.contains(e.target) && !selectorTriggerButtons.some(el => el.contains(e.target))) {
+  const target = e.target as Node | null;
+  if (!new_selector_content.contains(target) && !selectorTriggerButtons.some(el => el.contains(target))) {
     closeSelector({ blurHiddenFocus: true });
   }
 });
