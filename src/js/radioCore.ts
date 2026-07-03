@@ -9,6 +9,7 @@
 
 import { createActor } from 'xstate';
 import { createRadioMachine } from './radioMachine';
+import type { RadioDeps, RadioState } from './radioMachine';
 
 /** The clock shape xstate actors accept (not exported by the library).
  *  Tests inject a SimulatedClock here to control `after` delays. */
@@ -19,67 +20,23 @@ interface ActorClock {
 
 type ActorOptions = NonNullable<Parameters<typeof createActor>[1]>;
 
-export type RadioState =
-  | 'idle'
-  | 'loading'
-  | 'playing'
-  | 'paused'
-  | 'retrying'
-  | 'error'
-  | 'recovering';
-
-type PlaybackButton = 'play' | 'pause' | 'stop';
-
-/** A feedback sound (loading/error noise) the core can drive. */
-export interface FeedbackSound {
-  play(): void;
-  stop(): void;
-  /** Re-assert playback: restart if a play() was rejected or the OS paused it. */
-  ensure(): void;
-}
-
-type TimerId = number;
-
-/**
- * Everything the core needs from the outside world. The DOM glue layer
- * implements this against real elements; tests implement it with mocks.
- */
-export interface RadioDeps {
-  getStationUrl(index: number): string;
-  getStationCount(): number;
-  getSelectedIndex(): number;
-  setSelectedIndex(index: number): void;
-  playerPlay(): Promise<void>;
-  playerPause(): void;
-  playerSetSrc(url: string): void;
-  playerLoad(): void;
-  playerIsPaused(): boolean;
-  playerCurrentTime(): number;
-  loadingSound: FeedbackSound;
-  errorSound: FeedbackSound;
-  showButton(which: PlaybackButton): void;
-  setLoadingMsg(visible: boolean): void;
-  setErrorMsg(visible: boolean): void;
-  updateMediaSession(state: RadioState): void;
-  saveLastIndex(index: number): void;
-  setInterval(fn: () => void, ms: number): TimerId;
-  clearInterval(id: TimerId | null): void;
-  performanceNow(): number;
-  isOnline(): boolean;
-}
+// Shared domain types & timing constants live with the machine; re-exported
+// here so the rest of the app keeps a single import surface.
+export type { RadioState, FeedbackSound, RadioDeps } from './radioMachine';
+export {
+  MAX_RETRIES,
+  LOADING_TIMEOUT_MS,
+  RETRY_DELAY_MS,
+  RECOVERY_DELAY_MS,
+  RECOVERY_DELAY_MAX_MS,
+  WATCHDOG_INTERVAL_MS,
+  WATCHDOG_STALL_TICKS,
+  SOUND_SUPERVISOR_INTERVAL_MS,
+  USER_PAUSE_INTENT_MS,
+  LONG_PAUSE_RESTART_MS,
+} from './radioMachine';
 
 export type RadioCore = ReturnType<typeof createRadioCore>;
-
-export const MAX_RETRIES = 1;
-export const LOADING_TIMEOUT_MS = 6000;
-export const RETRY_DELAY_MS = 3000;
-export const RECOVERY_DELAY_MS = 10000;
-export const RECOVERY_DELAY_MAX_MS = 60000;
-export const WATCHDOG_INTERVAL_MS = 2000;
-export const WATCHDOG_STALL_TICKS = 3; // ≈6s of frozen playback ⇒ stream is dead
-export const SOUND_SUPERVISOR_INTERVAL_MS = 2500;
-export const USER_PAUSE_INTENT_MS = 2000; // how long a pauseRadio() call explains a native 'pause'
-export const LONG_PAUSE_RESTART_MS = 2000; // paused longer than this ⇒ restart the live stream
 
 export function createRadioCore(
   deps: RadioDeps,

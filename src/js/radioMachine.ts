@@ -18,21 +18,69 @@
  */
 
 import { setup, fromPromise, fromCallback, assign } from 'xstate';
-import type { RadioDeps, RadioState } from './radioCore';
-import {
-  MAX_RETRIES,
-  LOADING_TIMEOUT_MS,
-  RETRY_DELAY_MS,
-  RECOVERY_DELAY_MS,
-  RECOVERY_DELAY_MAX_MS,
-  WATCHDOG_INTERVAL_MS,
-  WATCHDOG_STALL_TICKS,
-  SOUND_SUPERVISOR_INTERVAL_MS,
-  USER_PAUSE_INTENT_MS,
-  LONG_PAUSE_RESTART_MS,
-} from './radioCore';
 
-type PlaybackButton = 'play' | 'pause' | 'stop';
+// --- Shared domain types & timing constants (owned here; radioCore
+// re-exports them so the rest of the app keeps importing from one place) ---
+
+export type RadioState =
+  | 'idle'
+  | 'loading'
+  | 'playing'
+  | 'paused'
+  | 'retrying'
+  | 'error'
+  | 'recovering';
+
+export type PlaybackButton = 'play' | 'pause' | 'stop';
+
+/** A feedback sound (loading/error noise) the machine can drive. */
+export interface FeedbackSound {
+  play(): void;
+  stop(): void;
+  /** Re-assert playback: restart if a play() was rejected or the OS paused it. */
+  ensure(): void;
+}
+
+type TimerId = number;
+
+/**
+ * Everything the machine needs from the outside world. The DOM glue layer
+ * implements this against real elements; tests implement it with mocks.
+ */
+export interface RadioDeps {
+  getStationUrl(index: number): string;
+  getStationCount(): number;
+  getSelectedIndex(): number;
+  setSelectedIndex(index: number): void;
+  playerPlay(): Promise<void>;
+  playerPause(): void;
+  playerSetSrc(url: string): void;
+  playerLoad(): void;
+  playerIsPaused(): boolean;
+  playerCurrentTime(): number;
+  loadingSound: FeedbackSound;
+  errorSound: FeedbackSound;
+  showButton(which: PlaybackButton): void;
+  setLoadingMsg(visible: boolean): void;
+  setErrorMsg(visible: boolean): void;
+  updateMediaSession(state: RadioState): void;
+  saveLastIndex(index: number): void;
+  setInterval(fn: () => void, ms: number): TimerId;
+  clearInterval(id: TimerId | null): void;
+  performanceNow(): number;
+  isOnline(): boolean;
+}
+
+export const MAX_RETRIES = 1;
+export const LOADING_TIMEOUT_MS = 6000;
+export const RETRY_DELAY_MS = 3000;
+export const RECOVERY_DELAY_MS = 10000;
+export const RECOVERY_DELAY_MAX_MS = 60000;
+export const WATCHDOG_INTERVAL_MS = 2000;
+export const WATCHDOG_STALL_TICKS = 3; // ≈6s of frozen playback ⇒ stream is dead
+export const SOUND_SUPERVISOR_INTERVAL_MS = 2500;
+export const USER_PAUSE_INTENT_MS = 2000; // how long a pauseRadio() call explains a native 'pause'
+export const LONG_PAUSE_RESTART_MS = 2000; // paused longer than this ⇒ restart the live stream
 type SoundFx = 'play' | 'stop' | 'keep';
 
 interface StateFx {
@@ -92,9 +140,6 @@ export function createRadioMachine(deps: RadioDeps) {
     guards: {
       isOnline: () => deps.isOnline(),
       canRetry: ({ context }) => context.retryCount < MAX_RETRIES,
-      recentUserPauseIntent: ({ context }) =>
-        context.userPauseIntentAt !== null &&
-        deps.performanceNow() - context.userPauseIntentAt <= USER_PAUSE_INTENT_MS,
       // A 'pause' nobody asked for while the network is down is the OS killing
       // a dead stream, not the user.
       unexpectedOfflinePause: ({ context }) => {
