@@ -6,6 +6,8 @@ import {
   isErrorLike,
   isFeedbackAudible,
   playbackStateFor,
+  LOADING_TIMEOUT_MS,
+  RETRY_DELAY_MS,
   RECOVERY_DELAY_MS,
   RECOVERY_DELAY_MAX_MS,
   WATCHDOG_INTERVAL_MS,
@@ -58,7 +60,6 @@ function makeDeps(overrides: Partial<RadioDeps> = {}) {
     playerPause: () => { calls.playerPause.push('pause'); calls.paused = true; },
     playerSetSrc: (url: string) => { calls.playerSetSrc.push(url); },
     playerLoad: () => { calls.playerLoad.push('load'); },
-    playerIsPaused: () => calls.paused,
     playerCurrentTime: () => calls.currentTime,
     loadingSound: {
       play: () => calls.loadingSound.push('play'),
@@ -665,16 +666,31 @@ describe('pauseRadio / resumeRadio', () => {
     expect(calls.playerPause.length).toBe(pausesBefore + 1);
   });
 
-  it('resumeRadio calls playerPlay', async () => {
+  it('resumeRadio calls playerPlay from paused', async () => {
     const { deps, calls } = makeDeps();
     const { core, clock } = createCore(deps);
 
     core.playRadio(0);
     await flushPromises();
+    core.onPlayerPause(); // state → paused
     const playsBefore = calls.playerPlay.length;
 
     core.resumeRadio();
     expect(calls.playerPlay.length).toBe(playsBefore + 1);
+  });
+
+  it('resumeRadio while already playing is a no-op', async () => {
+    const { deps, calls } = makeDeps();
+    const { core, clock } = createCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    expect(core.getState()).toBe('playing');
+    const playsBefore = calls.playerPlay.length;
+
+    core.resumeRadio();
+    expect(calls.playerPlay.length).toBe(playsBefore);
+    expect(core.getState()).toBe('playing');
   });
 });
 
@@ -729,9 +745,9 @@ describe('resume failures', () => {
 
     const pauseCallsBeforeResume = calls.playerPause.length;
     deps._setPlayerPlayResult(new Promise((_, reject) => { rejectResume = reject; }));
-    const resume = core.resumeRadio();
+    core.resumeRadio();
     rejectResume(new Error('resume blocked'));
-    await resume;
+    await flushPromises();
 
     expect(core.getState()).toBe('paused');
     expect(calls.paused).toBe(true);
@@ -752,9 +768,9 @@ describe('resume failures', () => {
 
     const pauseCallsBeforeResume = calls.playerPause.length;
     deps._setPlayerPlayResult(new Promise((_, reject) => { rejectResume = reject; }));
-    const resume = core.togglePlayPause();
+    core.togglePlayPause();
     rejectResume(new Error('resume blocked'));
-    await resume;
+    await flushPromises();
 
     expect(core.getState()).toBe('paused');
     expect(calls.paused).toBe(true);
@@ -773,15 +789,128 @@ describe('resume failures', () => {
 
     const pauseCallsBeforeResume = calls.playerPause.length;
     deps._setPlayerPlayResult(new Promise((_, reject) => { rejectResume = reject; }));
-    const resume = core.onPlayButtonClick();
+    core.onPlayButtonClick();
     rejectResume(new Error('resume blocked'));
-    await resume;
+    await flushPromises();
 
     expect(core.getState()).toBe('paused');
     expect(calls.paused).toBe(true);
     expect(calls.playerPause.length).toBe(pauseCallsBeforeResume + 1);
   });
 
+});
+
+// =============================================
+// USER GESTURES ARE MACHINE POLICY (R3)
+// =============================================
+
+describe('user gestures are machine policy', () => {
+  it('toggle during loading cancels everything — playback must not restart later', async () => {
+    const { deps } = makeDeps();
+    deps._setPlayerPlayResult(new Promise(() => {})); // stream never connects
+    const { core, clock } = createCore(deps);
+
+    core.playRadio(0);
+    expect(core.getState()).toBe('loading');
+
+    core.togglePlayPause(); // the user's last action: "stop this"
+    expect(core.getState()).toBe('idle');
+
+    // The old bug: the loading timeout survived, retried, and started
+    // playback the user had just tried to stop.
+    clock.increment(LOADING_TIMEOUT_MS + RETRY_DELAY_MS + 1000);
+    await flushPromises();
+    expect(core.getState()).toBe('idle');
+  });
+
+  it('a pause request during loading stops instead of pausing', () => {
+    const { deps } = makeDeps();
+    deps._setPlayerPlayResult(new Promise(() => {}));
+    const { core, clock } = createCore(deps);
+
+    core.playRadio(0);
+    expect(core.getState()).toBe('loading');
+
+    core.pauseRadio(); // lock-screen pause while the loading tone plays
+    expect(core.getState()).toBe('idle');
+  });
+
+  it('a play gesture from error starts the selected station (was a lock-screen no-op)', async () => {
+    const { deps } = makeDeps();
+    deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
+    const { core, clock } = createCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    clock.increment(RETRY_DELAY_MS);
+    await flushPromises();
+    expect(core.getState()).toBe('error');
+
+    deps._setPlayerPlayResult(Promise.resolve());
+    core.resumeRadio(); // lock-screen / media-key play
+    expect(core.getState()).toBe('loading');
+    await flushPromises();
+    expect(core.getState()).toBe('playing');
+  });
+
+  it('a play gesture from error while offline fast-fails without touching the player', async () => {
+    let online = true;
+    const { deps, calls } = makeDeps({ isOnline: () => online });
+    deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
+    const { core, clock } = createCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    clock.increment(RETRY_DELAY_MS);
+    await flushPromises();
+    expect(core.getState()).toBe('error');
+
+    online = false;
+    const playsBefore = calls.playerPlay.length;
+    core.resumeRadio();
+    expect(core.getState()).toBe('error');
+    expect(calls.playerPlay.length).toBe(playsBefore); // nothing attempted on a dead network
+    expect(calls.errorSound.at(-1)).toBe('play');      // still audible
+  });
+
+  it('resume after a long pause while offline fast-fails to error, not ~9s of loading tone', async () => {
+    let online = true;
+    const { deps, calls } = makeDeps({ isOnline: () => online });
+    const { core, clock } = createCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    expect(core.getState()).toBe('playing');
+
+    calls.now = 1000;
+    core.pauseRadio();
+    core.onPlayerPause();
+    expect(core.getState()).toBe('paused');
+
+    online = false;
+    calls.now = 5000; // well past LONG_PAUSE_RESTART_MS
+    core.resumeRadio();
+    expect(core.getState()).toBe('error'); // immediate fast-fail, recovery loop armed
+    expect(calls.errorSound.at(-1)).toBe('play');
+  });
+
+  it('resume gesture after a long pause restarts the station through loading', async () => {
+    const { deps, calls } = makeDeps();
+    const { core, clock } = createCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    calls.now = 1000;
+    core.pauseRadio();
+    core.onPlayerPause();
+    expect(core.getState()).toBe('paused');
+
+    calls.now = 5000;
+    core.resumeRadio();
+    expect(core.getState()).toBe('loading'); // full restart, not a stale-buffer resume
+    await flushPromises();
+    expect(core.getState()).toBe('playing');
+  });
 });
 
 // =============================================

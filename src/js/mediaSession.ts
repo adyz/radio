@@ -10,7 +10,7 @@
  */
 
 import type { RadioCore, RadioState } from './radioCore';
-import { isLoadingLike, isErrorLike, isFeedbackAudible, playbackStateFor } from './radioCore';
+import { isLoadingLike, isErrorLike, playbackStateFor } from './radioCore';
 import { LABELS } from './labels';
 import { cloudinaryImageUrl } from './cloudinary';
 import { radioSelect, posterImage, loadingMsg, loadingNoise, errorNoise } from './dom';
@@ -37,16 +37,9 @@ export function connectMediaSessionCore(radioCore: RadioCore): void {
 function registerMediaSessionHandlers() {
   navigator.mediaSession.setActionHandler('previoustrack', () => core?.prevRadio());
   navigator.mediaSession.setActionHandler('nexttrack',     () => core?.nextRadio());
-  navigator.mediaSession.setActionHandler('pause', () => {
-    if (!core) return;
-    // While a feedback sound is what's audible (not the stream), "pause"
-    // should cancel everything (same as the on-screen stop button).
-    if (isFeedbackAudible(core.getState())) {
-      core.stopRadio();
-    } else {
-      core.pauseRadio();
-    }
-  });
+  // Whether "pause" means pause or a full stop (while a feedback sound is
+  // what's audible) is the machine's per-state decision, not ours.
+  navigator.mediaSession.setActionHandler('pause', () => core?.pauseRadio());
   navigator.mediaSession.setActionHandler('play',          () => core?.resumeRadio());
   navigator.mediaSession.setActionHandler('seekbackward', null);
   navigator.mediaSession.setActionHandler('seekforward',  null);

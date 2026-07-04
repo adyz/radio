@@ -17,7 +17,7 @@
  * injected deps, so it stays testable without a browser.
  */
 
-import { setup, fromPromise, fromCallback, assign } from 'xstate';
+import { setup, fromPromise, fromCallback, assign, raise, and } from 'xstate';
 
 // --- Shared domain types & timing constants (owned here; radioCore
 // re-exports them so the rest of the app keeps importing from one place) ---
@@ -56,7 +56,6 @@ export interface RadioDeps {
   playerPause(): void;
   playerSetSrc(url: string): void;
   playerLoad(): void;
-  playerIsPaused(): boolean;
   playerCurrentTime(): number;
   loadingSound: FeedbackSound;
   errorSound: FeedbackSound;
@@ -143,8 +142,13 @@ export interface RadioContext {
 export type RadioEvent =
   | { type: 'PLAY'; index: number }
   | { type: 'STOP' }
-  | { type: 'USER_PAUSE_INTENT' }
-  | { type: 'RESUME_FAILED' }
+  /** User asked to pause (on-screen button, lock screen). The machine decides
+   *  per state whether that means pause or a full stop. */
+  | { type: 'PAUSE_REQUESTED' }
+  /** User asked to (re)start playback (play button, lock-screen play,
+   *  media-key resume) — the machine decides per state what that means. */
+  | { type: 'RESUME' }
+  | { type: 'TOGGLE' }
   | { type: 'PLAYER_PLAY' }
   | { type: 'PLAYER_PAUSE' }
   | { type: 'PLAYER_ERROR' }
@@ -170,6 +174,36 @@ export function createRadioMachine(deps: RadioDeps) {
     { guard: 'isOnline' as const, target: 'recovering' as const, actions: 'clearOfflineRecheck' as const },
     { target: 'error' as const, reenter: true, actions: 'markOfflineRecheck' as const },
   ];
+
+  // Live streams drift — resuming after a long pause would replay stale
+  // buffer, so restart the station instead, honoring the same offline
+  // fast-fail as PLAY (no point trying on a dead network).
+  const restartAfterLongPause = [
+    {
+      guard: and(['pausedTooLong', 'isOnline']),
+      target: 'loading' as const,
+      actions: ['clearPauseTime' as const, 'stopPlayer' as const, 'resetRetryCount' as const, 'resetRecoveryCount' as const],
+    },
+    {
+      guard: 'pausedTooLong' as const,
+      target: 'error' as const,
+      actions: ['clearPauseTime' as const, 'stopPlayer' as const, 'resetRetryCount' as const, 'resetRecoveryCount' as const, 'beginErrorCycle' as const],
+    },
+  ];
+
+  // In the states where a user gesture means "(re)start the radio", RESUME
+  // and TOGGLE behave identically.
+  const startFromSelector = {
+    RESUME: { actions: 'raisePlaySelected' as const },
+    TOGGLE: { actions: 'raisePlaySelected' as const },
+  };
+
+  // In the feedback states, any pause-ish gesture cancels everything —
+  // same as the on-screen stop button.
+  const pauseMeansStop = {
+    TOGGLE: { actions: 'raiseStop' as const },
+    PAUSE_REQUESTED: { actions: 'raiseStop' as const },
+  };
 
   return setup({
     types: {
@@ -278,6 +312,11 @@ export function createRadioMachine(deps: RadioDeps) {
       clearPauseTime: assign({ lastPauseTime: null }),
 
       stopPlayer: () => stopPlayer(),
+      pausePlayer: () => deps.playerPause(),
+      raiseStop: raise({ type: 'STOP' } as const),
+      // Every "start playing" affordance (play button, lock screen, media
+      // key) starts from whatever station the selector currently shows.
+      raisePlaySelected: raise(() => ({ type: 'PLAY' as const, index: deps.getSelectedIndex() })),
       // Order matters: this runs as an ENTRY action after applyFx, so the
       // native 'pause' event it triggers arrives while the state is already
       // loading/recovering and gets ignored (main.ts skips playbackState
@@ -319,13 +358,17 @@ export function createRadioMachine(deps: RadioDeps) {
         target: '.idle',
         actions: ['resetRetryCount', 'resetRecoveryCount', 'clearPauseTime', 'stopPlayer'],
       },
-      USER_PAUSE_INTENT: { actions: 'markUserPauseIntent' },
+      // A user-intent pause: mark it so the native 'pause' event it triggers
+      // isn't mistaken for a dying stream. The feedback states override this
+      // (and TOGGLE) with a full stop.
+      PAUSE_REQUESTED: { actions: ['markUserPauseIntent', 'pausePlayer'] },
       PLAYER_PLAY: { actions: 'clearPauseTime' },
     },
 
     states: {
       idle: {
         entry: [{ type: 'applyFx', params: { state: 'idle' } }],
+        on: { ...startFromSelector },
       },
 
       loading: {
@@ -349,6 +392,7 @@ export function createRadioMachine(deps: RadioDeps) {
         after: {
           LOADING_TIMEOUT: streamFailure('stopPlayer'),
         },
+        on: { ...pauseMeansStop },
       },
 
       retrying: {
@@ -360,12 +404,14 @@ export function createRadioMachine(deps: RadioDeps) {
             { target: 'error', actions: ['stopPlayer', 'beginErrorCycle'] },
           ],
         },
+        on: { ...pauseMeansStop },
       },
 
       playing: {
         entry: [{ type: 'applyFx', params: { state: 'playing' } }],
         invoke: { src: 'watchdog' },
         on: {
+          TOGGLE: { actions: ['markUserPauseIntent', 'pausePlayer'] },
           STALLED: streamFailure('clearPauseTime'),
           PLAYER_PAUSE: [
             {
@@ -385,21 +431,35 @@ export function createRadioMachine(deps: RadioDeps) {
 
       paused: {
         entry: [{ type: 'applyFx', params: { state: 'paused' } }],
+        initial: 'still',
+        states: {
+          still: {},
+          // The in-machine resume attempt (replaces the adapter's old
+          // resumePlayer + RESUME_FAILED). Presentation stays 'paused' — the
+          // substate exists so a failed play() re-applies the paused fx, and
+          // leaving it discards a stale resolve/reject like every attemptPlay.
+          resuming: {
+            invoke: {
+              src: 'attemptPlay',
+              onDone: { target: '#radio.playing', actions: 'clearPauseTime' },
+              onError: [
+                // Our own pause/src change interrupted play() — stay paused.
+                { guard: 'isAbortError', target: 'still' },
+                // Failed resume: pause defensively and re-enter paused to
+                // re-apply the fx (the old RESUME_FAILED re-application).
+                { target: '#radio.paused', actions: 'pausePlayer' },
+              ],
+            },
+          },
+        },
         on: {
           PLAYER_PLAY: [
-            {
-              // Live streams drift — resuming after a long pause replays stale
-              // buffer, so restart the station from scratch instead.
-              guard: 'pausedTooLong',
-              target: 'loading',
-              actions: ['clearPauseTime', 'stopPlayer', 'resetRetryCount', 'resetRecoveryCount'],
-            },
+            ...restartAfterLongPause,
             { target: 'playing', actions: 'clearPauseTime' },
           ],
+          RESUME: [...restartAfterLongPause, { target: '.resuming' }],
+          TOGGLE: [...restartAfterLongPause, { target: '.resuming' }],
           PLAYER_ERROR: streamFailure('clearPauseTime'),
-          // A failed resume keeps us paused; re-enter to re-apply the fx
-          // (same as the old setState('paused') re-application).
-          RESUME_FAILED: { target: 'paused', reenter: true },
         },
       },
 
@@ -411,6 +471,8 @@ export function createRadioMachine(deps: RadioDeps) {
         },
         on: {
           RETRY_FROM_ERROR: tryRecover,
+          ...startFromSelector,
+          PAUSE_REQUESTED: { actions: 'raiseStop' },
         },
       },
 
@@ -437,6 +499,8 @@ export function createRadioMachine(deps: RadioDeps) {
         },
         on: {
           RETRY_FROM_ERROR: { guard: 'isOnline', target: 'recovering', reenter: true },
+          ...startFromSelector,
+          PAUSE_REQUESTED: { actions: 'raiseStop' },
         },
       },
     },

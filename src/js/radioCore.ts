@@ -3,12 +3,14 @@
  *
  * Keeps the same public API the DOM layer always used (playRadio, stopRadio,
  * togglePlayPause, onPlayerPause, …) and translates it into machine events.
- * All DOM / browser interaction still comes in through the `deps` object so
- * everything stays testable without a browser.
+ * Pure forwarding: every user gesture and player event is one send(); all
+ * playback policy (what resume/toggle/pause mean per state) lives in the
+ * machine. All DOM / browser interaction still comes in through the `deps`
+ * object so everything stays testable without a browser.
  */
 
 import { createActor } from 'xstate';
-import { createRadioMachine, isAbortError } from './radioMachine';
+import { createRadioMachine } from './radioMachine';
 import type { RadioDeps, RadioState } from './radioMachine';
 
 /** The clock shape xstate actors accept (not exported by the library).
@@ -53,16 +55,21 @@ export function createRadioCore(
     ...(options.inspect ? { inspect: options.inspect } : {}),
   });
 
+  // 'paused' is a compound state (its resume attempt lives in a substate);
+  // the public RadioState stays the flat top-level name.
+  const stateOf = (value: unknown): RadioState =>
+    (typeof value === 'string' ? value : Object.keys(value as Record<string, unknown>)[0]) as RadioState;
+
   // Same transition log the old state machine printed.
   let prev: RadioState | null = null;
   actor.subscribe((snapshot) => {
-    const next = snapshot.value as RadioState;
+    const next = stateOf(snapshot.value);
     if (prev !== next) console.log(`[radio] ${prev ?? '∅'} → ${next}`);
     prev = next;
   });
   actor.start();
 
-  const getState = (): RadioState => actor.getSnapshot().value as RadioState;
+  const getState = (): RadioState => stateOf(actor.getSnapshot().value);
 
   function playRadio(index: number) {
     actor.send({ type: 'PLAY', index });
@@ -85,36 +92,15 @@ export function createRadioCore(
   }
 
   function pauseRadio() {
-    // Remember that this pause was asked for by the user, so the native
-    // 'pause' event it triggers isn't mistaken for a dying stream.
-    actor.send({ type: 'USER_PAUSE_INTENT' });
-    deps.playerPause();
-  }
-
-  function handleResumeError(error: unknown) {
-    if (isAbortError(error)) return;
-    try {
-      deps.playerPause();
-    } catch (_) {
-      // Keep resume error handling focused on restoring state.
-    }
-    actor.send({ type: 'RESUME_FAILED' });
+    actor.send({ type: 'PAUSE_REQUESTED' });
   }
 
   function resumeRadio() {
-    return deps.playerPlay().catch(handleResumeError);
+    actor.send({ type: 'RESUME' });
   }
 
   function togglePlayPause() {
-    if (deps.playerIsPaused()) {
-      const s = getState();
-      if (s === 'paused') return resumeRadio();
-      else if (s === 'idle' || s === 'error' || s === 'recovering') {
-        playRadio(deps.getSelectedIndex());
-      }
-    } else {
-      pauseRadio();
-    }
+    actor.send({ type: 'TOGGLE' });
   }
 
   // Native player events → machine events
@@ -123,14 +109,9 @@ export function createRadioCore(
   const onPlayerError = () => actor.send({ type: 'PLAYER_ERROR' });
   const retryFromError = () => actor.send({ type: 'RETRY_FROM_ERROR' });
 
-  function onPlayButtonClick() {
-    const s = getState();
-    if (s === 'idle' || s === 'error' || s === 'recovering') {
-      playRadio(deps.getSelectedIndex());
-    } else if (s === 'paused') {
-      return resumeRadio();
-    }
-  }
+  // The on-screen play button and the lock-screen play control are the same
+  // gesture — the machine decides per state what it means.
+  const onPlayButtonClick = resumeRadio;
 
   return {
     getState,

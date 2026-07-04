@@ -107,7 +107,6 @@ const core = createRadioCore({
   playerPause:      () => player.pause(),
   playerSetSrc:     (url) => { player.src = url; },
   playerLoad:       () => player.load(),
-  playerIsPaused:   () => player.paused,
   playerCurrentTime: () => player.currentTime,
   loadingSound:     loadingNoiseInstance,
   errorSound:       errorNoiseInstance,
