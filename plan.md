@@ -333,6 +333,30 @@ for-silent), dar condusa din masina/reconciler — precisa si testabila unit,
 nu coordonare event-driven ad-hoc in stratul DOM (motivul revertului a fost
 CUM era scrisa, nu CA nu mergea).
 
+Repro suplimentar (Adrian, 2026-07-04) — gestul irosit, diagnoza defectului
+"isPlaying = intentie, nu realitate":
+- play → lock → wifi off → loading porneste, apoi liniste la eroare (stiut).
+- Deblocat cu aplicatia in fata: ecranul de eroare se vede, NIMIC nu se
+  aude — deblocarea nu e gest in pagina, iar dupa moartea sesiunii iOS
+  refuza si in foreground play()-urile programatice (supervisor).
+- next/prev: ecranul ramane, tot fara sunet. Gestul userului e IROSIT:
+  la click, isPlaying e adesea true (incercare programatica refuzata inca
+  in zbor), asa ca warmUp() si play() fac early-return pe intentie si
+  niciun element.play() nu ruleaza in call stack-ul gestului.
+- stop + play: se aude — stop() reseteaza fortat intentia (gen++, src=''),
+  deci play-ul urmator chiar executa element.play() inauntrul gestului.
+Regula noua pentru reconciler: ORICE gest de user reconciliaza realitatea —
+daca elementul cerut de stare nu canta EFECTIV (element.paused), play() se
+executa atunci, in stack-ul gestului, indiferent de flag-ul de intentie.
+Ideal si reconciliere pe visibilitychange la revenirea in aplicatie.
+
+Criterii de acceptare R4b (pe iPhone, toate cu wifi off la momentul potrivit):
+1. play → lock IMEDIAT → wifi off → eroarea se aude DIN PRIMA (carry).
+2. In starea muta istorica: deblocare + next/prev → sunetul revine din
+   gestul ala (reconcile-on-gesture).
+3. stop + play continua sa mearga ca azi.
+4. Fluxul normal (eroare auzita cu app deschisa, apoi lock) ramane intact.
+
 ### Planul initial (referinta)
 
 - Instalam `xstate` (fara `@xstate/react`).
