@@ -28,11 +28,19 @@ declare global {
 
 document.addEventListener("touchstart", function () { }, true);
 
-// Pre-cache status images + station name images for offline use
-precacheStatusImages([
+// Pre-cache status images + station name images for offline use — deferred
+// to idle time so the ~22 image fetches don't compete with the stream
+// connection and the sound-blob preloads at startup (time-to-audio first).
+const runStatusImagePrecache = () => precacheStatusImages([
   ...Object.values(LABELS),
   ...Array.from(radioSelect.options).map(o => o.text),
 ]);
+if ('requestIdleCallback' in window) {
+  requestIdleCallback(runStatusImagePrecache, { timeout: 5000 });
+} else {
+  // Safari has no requestIdleCallback — a plain delay clears startup anyway.
+  setTimeout(runStatusImagePrecache, 3000);
+}
 
 // Restore last station before anything reads selectedIndex
 const restoredStationIndex = getStoredStationIndex(radioSelect.options.length);
