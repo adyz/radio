@@ -96,6 +96,27 @@ interface StateFx {
   errorMsg: boolean;
 }
 
+// --- State classification: the single source of truth for the DOM layer ---
+// Derived from what STATE_FX presents; DOM modules must not hand-maintain
+// their own state lists (they drifted before — see plan.md, faza R2).
+
+/** States presenting as "loading": loading tone + loading message. */
+export const isLoadingLike = (s: RadioState): boolean =>
+  s === 'loading' || s === 'retrying';
+
+/** States presenting as "error": error tone and/or error visuals. */
+export const isErrorLike = (s: RadioState): boolean =>
+  s === 'error' || s === 'recovering';
+
+/** States where a feedback sound, not the stream, is what's audible. */
+export const isFeedbackAudible = (s: RadioState): boolean =>
+  isLoadingLike(s) || isErrorLike(s);
+
+/** What the OS lock screen / Now Playing should report for a state —
+ *  'playing' whenever ANYTHING is audible (stream or feedback sound). */
+export const playbackStateFor = (s: RadioState): 'playing' | 'paused' | 'none' =>
+  s === 'playing' || isFeedbackAudible(s) ? 'playing' : s === 'paused' ? 'paused' : 'none';
+
 const STATE_FX: Record<RadioState, StateFx> = {
   idle:       { button: 'play',  loading: 'stop',  error: 'stop',  loadingMsg: false, errorMsg: false },
   loading:    { button: 'stop',  loading: 'play',  error: 'stop',  loadingMsg: true,  errorMsg: false },

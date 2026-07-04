@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { SimulatedClock } from 'xstate';
 import {
   createRadioCore,
+  isLoadingLike,
+  isErrorLike,
+  isFeedbackAudible,
+  playbackStateFor,
   RECOVERY_DELAY_MS,
   RECOVERY_DELAY_MAX_MS,
   WATCHDOG_INTERVAL_MS,
@@ -9,6 +13,7 @@ import {
   SOUND_SUPERVISOR_INTERVAL_MS,
   USER_PAUSE_INTENT_MS,
   type RadioDeps,
+  type RadioState,
 } from './radioCore';
 
 // --- Helpers ---
@@ -1297,5 +1302,31 @@ describe('sound supervisor', () => {
 
     core.stopRadio();
     expect(supervisorCount()).toBe(0);
+  });
+});
+
+// =============================================
+// STATE CLASSIFICATION (single source of truth for the DOM layer)
+// =============================================
+
+describe('state classification predicates', () => {
+  it('classifies every state exactly as STATE_FX presents it', () => {
+    const table: Record<RadioState, {
+      loadingLike: boolean; errorLike: boolean; playback: 'playing' | 'paused' | 'none';
+    }> = {
+      idle:       { loadingLike: false, errorLike: false, playback: 'none' },
+      loading:    { loadingLike: true,  errorLike: false, playback: 'playing' },
+      playing:    { loadingLike: false, errorLike: false, playback: 'playing' },
+      paused:     { loadingLike: false, errorLike: false, playback: 'paused' },
+      retrying:   { loadingLike: true,  errorLike: false, playback: 'playing' },
+      error:      { loadingLike: false, errorLike: true,  playback: 'playing' },
+      recovering: { loadingLike: false, errorLike: true,  playback: 'playing' },
+    };
+    for (const [state, expected] of Object.entries(table) as Array<[RadioState, typeof table[RadioState]]>) {
+      expect(isLoadingLike(state), `isLoadingLike(${state})`).toBe(expected.loadingLike);
+      expect(isErrorLike(state), `isErrorLike(${state})`).toBe(expected.errorLike);
+      expect(isFeedbackAudible(state), `isFeedbackAudible(${state})`).toBe(expected.loadingLike || expected.errorLike);
+      expect(playbackStateFor(state), `playbackStateFor(${state})`).toBe(expected.playback);
+    }
   });
 });

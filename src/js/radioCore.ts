@@ -24,6 +24,12 @@ type ActorOptions = NonNullable<Parameters<typeof createActor>[1]>;
 // here so the rest of the app keeps a single import surface.
 export type { RadioState, FeedbackSound, RadioDeps } from './radioMachine';
 export {
+  isLoadingLike,
+  isErrorLike,
+  isFeedbackAudible,
+  playbackStateFor,
+} from './radioMachine';
+export {
   MAX_RETRIES,
   LOADING_TIMEOUT_MS,
   RETRY_DELAY_MS,

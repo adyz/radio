@@ -10,6 +10,7 @@
  */
 
 import type { RadioCore, RadioState } from './radioCore';
+import { isLoadingLike, isErrorLike, isFeedbackAudible, playbackStateFor } from './radioCore';
 import { LABELS } from './labels';
 import { cloudinaryImageUrl } from './cloudinary';
 import { radioSelect, posterImage, loadingMsg, loadingNoise, errorNoise } from './dom';
@@ -38,10 +39,9 @@ function registerMediaSessionHandlers() {
   navigator.mediaSession.setActionHandler('nexttrack',     () => core?.nextRadio());
   navigator.mediaSession.setActionHandler('pause', () => {
     if (!core) return;
-    const s = core.getState();
-    // During loading/error the sound effects are playing, not the stream.
-    // "Pause" should cancel everything (same as the on-screen stop button).
-    if (s === 'loading' || s === 'retrying' || s === 'error' || s === 'recovering') {
+    // While a feedback sound is what's audible (not the stream), "pause"
+    // should cancel everything (same as the on-screen stop button).
+    if (isFeedbackAudible(core.getState())) {
       core.stopRadio();
     } else {
       core.pauseRadio();
@@ -90,8 +90,7 @@ errorNoise.addEventListener('timeupdate', clearPositionState);
 // it picks up audio from the main player.
 function reassertPlaybackState() {
   if (!('mediaSession' in navigator) || !core) return;
-  const s = core.getState();
-  if (s === 'playing' || s === 'loading' || s === 'retrying' || s === 'error' || s === 'recovering') {
+  if (playbackStateFor(core.getState()) === 'playing') {
     navigator.mediaSession.playbackState = 'playing';
     clearPositionState();
   }
@@ -102,8 +101,8 @@ errorNoise.addEventListener('pause', reassertPlaybackState);
 export const updateMediaSession = (newState: RadioState) => {
   const title = radioSelect.options[radioSelect.selectedIndex].text;
   const isIdle = newState === 'idle';
-  const isLoading = newState === 'loading' || newState === 'retrying';
-  const hasError = newState === 'error' || newState === 'recovering';
+  const isLoading = isLoadingLike(newState);
+  const hasError = isErrorLike(newState);
   const isLive = newState === 'playing';
 
   const idleText = hasRestoredStation ? title : LABELS.appName;
@@ -124,11 +123,11 @@ export const updateMediaSession = (newState: RadioState) => {
     }
 
     // Keep session alive during loading/error (sounds are playing via <audio>)
-    navigator.mediaSession.playbackState = (isLive || isLoading || hasError) ? 'playing' : newState === 'paused' ? 'paused' : 'none';
+    navigator.mediaSession.playbackState = playbackStateFor(newState);
 
     // Clear position state for active/paused states — tells the OS there's no
     // seekable timeline, so it won't show a finite progress bar.
-    if (isLive || isLoading || hasError || newState === 'paused') {
+    if (playbackStateFor(newState) !== 'none') {
       clearPositionState();
     }
   }
