@@ -120,6 +120,11 @@ export function audioInstance(htmlElement: HTMLAudioElement) {
         return;
       }
       if (htmlElement.paused) {
+        // No src on the element means play() is still waiting for the blob
+        // preload (startPlayback always sets src before playing) — poking
+        // play() now would reject on the empty source and cancel that
+        // pending start, adding a tick of silence. Leave it alone.
+        if (!htmlElement.getAttribute('src')) return;
         const gen = playGeneration;
         htmlElement.play().catch((error) => {
           if (gen !== playGeneration) return;

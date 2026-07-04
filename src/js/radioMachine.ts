@@ -412,7 +412,10 @@ export function createRadioMachine(deps: RadioDeps) {
         invoke: { src: 'watchdog' },
         on: {
           TOGGLE: { actions: ['markUserPauseIntent', 'pausePlayer'] },
-          STALLED: streamFailure('clearPauseTime'),
+          // stopPlayer: the stalled/errored stream stays attached otherwise,
+          // and a refilled buffer would resume audibly UNDER the loading tone
+          // during RETRY_DELAY — the machine never allows overlapping sounds.
+          STALLED: streamFailure('stopPlayer', 'clearPauseTime'),
           PLAYER_PAUSE: [
             {
               guard: 'unexpectedOfflinePause',
@@ -425,7 +428,7 @@ export function createRadioMachine(deps: RadioDeps) {
             // phone call, another app taking audio) — stay paused.
             { target: 'paused', actions: ['consumeUserPauseIntent', 'markPauseTime'] },
           ],
-          PLAYER_ERROR: streamFailure('clearPauseTime'),
+          PLAYER_ERROR: streamFailure('stopPlayer', 'clearPauseTime'),
         },
       },
 

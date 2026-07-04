@@ -1213,6 +1213,42 @@ describe('playback watchdog', () => {
     expect(core.getState()).toBe('playing');
   });
 
+  it('a stall silences the zombie stream before the loading tone starts', async () => {
+    const { deps, calls } = makeDeps();
+    const { core, clock } = createCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    expect(core.getState()).toBe('playing');
+
+    calls.currentTime = 5;
+    tickWatchdog(deps);
+
+    const pausesBefore = calls.playerPause.length;
+    tickWatchdog(deps, WATCHDOG_STALL_TICKS);
+    expect(core.getState()).toBe('retrying');
+
+    // The stalled stream must be detached — a refilled buffer would
+    // otherwise resume audibly UNDER the loading tone during RETRY_DELAY.
+    expect(calls.playerPause.length).toBeGreaterThan(pausesBefore);
+    expect(calls.playerSetSrc.at(-1)).toBe('');
+  });
+
+  it('a native stream error silences the player before retrying', async () => {
+    const { deps, calls } = makeDeps();
+    const { core, clock } = createCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    expect(core.getState()).toBe('playing');
+
+    const pausesBefore = calls.playerPause.length;
+    core.onPlayerError();
+    expect(core.getState()).toBe('retrying');
+    expect(calls.playerPause.length).toBeGreaterThan(pausesBefore);
+    expect(calls.playerSetSrc.at(-1)).toBe('');
+  });
+
   it('a moment of progress resets the stall countdown', async () => {
     const { deps, calls } = makeDeps();
     const { core, clock } = createCore(deps);

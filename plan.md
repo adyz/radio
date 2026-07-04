@@ -175,6 +175,10 @@ cu `tone: 'loading'|'error'|'none'` in STATE_FX — overlap imposibil prin
 constructie, schimbarea de ton = swap de src pe elementul care deja canta
 (exact continuarea permisa de iOS). De facut eventual in Faza 4 (XState),
 cu re-validare completa pe device.
+[DEPASIT 2026-07-04 — ideea "un singur element" a fost retrasa; vezi
+CORECTIA DE DIRECTIE din sectiunea 4b: fara element partener nu exista
+plasa "never trade audible for silent", iar golul de swap ramane fatal
+pe iPhone blocat (a0aec46).]
 
 ## Faza 2: TypeScript [gata]
 
@@ -302,8 +306,25 @@ de ton il rezolva prin constructie:
   imediat; loading-ul merge pentru ca porneste chiar in call stack-ul
   gestului, cu aplicatia in fata. Supervisor-ul care reincearca la 2.5s e
   refuzat la nesfarsit din acelasi motiv (pornire proaspata in background).
-- Canalul unic de ton (loading care isi schimba src-ul in eroare, element
-  deja audibil) ocoleste exact refuzul asta.
+
+CORECTIE DE DIRECTIE (2026-07-04, dupa recitirea istoricului cu Adrian):
+NU "un singur element de feedback". Istoria branch-ului PR #41 arata de ce:
+- a0aec46: play() doar INITIAZA redarea (decode/buffer async) — orice gol
+  real de liniste pe iPhone blocat omoara sesiunea si play()-ul pendinte e
+  refuzat. De aceea sunetul vechi trebuie sa cante PANA CAND cel nou e
+  efectiv audibil ('playing') — deferred stop intre DOUA elemente.
+- 31d684a: carry-ul (elementul care deja canta isi schimba src-ul pe tonul
+  partenerului refuzat) e LAST RESORT, cu regula "never trade audible for
+  silent": o singura tentativa, si daca si continuarea e refuzata, revine
+  la sunetul propriu. Un element unic face din swap singura cale, fara
+  plasa de siguranta — un swap esuat inseamna liniste totala.
+- Handoff-ul feedback <-> player principal ramane oricum intre doua
+  elemente; "un singur element" nu-l elimina.
+Directia 4b devine: re-implementarea semanticii VERIFICATE PE DEVICE din
+PR #41 (deferred stop + carry last-resort + reclaim + never-trade-audible-
+for-silent), dar condusa din masina/reconciler — precisa si testabila unit,
+nu coordonare event-driven ad-hoc in stratul DOM (motivul revertului a fost
+CUM era scrisa, nu CA nu mergea).
 
 ### Planul initial (referinta)
 
@@ -424,15 +445,19 @@ Sursa: review multi-agent pe intervalul `3e36147..HEAD` (ultimele 2 zile) —
 
 ## Ce NU facem in acest plan
 
-- Faza 4b (reconcile() in audioInstance + canal unic de feedback cu tone in
-  STATE_FX) ramane separata — cere re-validare completa pe device. Aici facem
-  doar fix-ul minim al race-ului ensure() (R4), compatibil cu redesignul viitor.
+- Faza 4b (reconcile() in audioInstance + handoff/carry condus din masina —
+  vezi CORECTIA DE DIRECTIE din sectiunea 4b) ramane separata — cere
+  re-validare completa pe device. Aici facem doar fix-ul minim al race-ului
+  ensure() (R4), compatibil cu redesignul viitor.
 - NU consolidam cele 3 hook-uri de re-asertare din mediaSession.ts
   (play/playing, timeupdate, pause) — empirism iOS/macOS calit pe device
   (d798cc9, 2933d78, 5106a92). Le atingem doar prin predicate partajate (R2),
   fara sa schimbam timing-ul apelurilor.
 
-## Faza R1: curatenie mecanica — zero schimbare de comportament
+STATUS (2026-07-04): R1 (PR #45), R2 (PR #46), R3 (PR #47) — MERGED.
+R3 verificat pe device de Adrian inainte de merge. Urmeaza R4.
+
+## Faza R1: curatenie mecanica — zero schimbare de comportament [gata]
 
 Numai stersaturi si extrageri; bundle-ul si comportamentul identice.
 
@@ -458,7 +483,7 @@ Numai stersaturi si extrageri; bundle-ul si comportamentul identice.
 
 Verificare: typecheck, 63→~62 unit (unul sters), build, e2e integral neatins.
 
-## Faza R2: sursa unica pentru clasificarea starilor
+## Faza R2: sursa unica pentru clasificarea starilor [gata]
 
 Clasificarea "ce e audibil / cum se raporteaza playbackState" exista azi in
 4 liste de mana (main.ts:183, mediaSession.ts:44, :94, :105-106) care au
@@ -476,7 +501,7 @@ divergat deja o data (a667b7f).
 Verificare: typecheck, unit, e2e neatins. Diff-ul de bundle trebuie sa fie
 doar renamings.
 
-## Faza R3: resume si intentiile userului intra in masina
+## Faza R3: resume si intentiile userului intra in masina [gata]
 
 Cea mai valoroasa faza — inchide 2 bug-uri confirmate si goleste adaptorul.
 
