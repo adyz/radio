@@ -289,6 +289,22 @@ Implementat conform planului de mai jos. Note:
 Ramane separat (vezi sectiunea de mai jos "Redesign audioInstance") — cere
 re-validare pe device (lock screen, prev/next, offline).
 
+Repro observat pe iPhone (Adrian, 2026-07-04) — cazul exact pe care canalul
+de ton il rezolva prin constructie:
+- Flux OK: play din app, folosire normala, lock -> wifi off -> loading sound
+  + imagine loading -> apoi eroare cu sunet -> wifi on -> revine singur.
+- Caveat: play din app si LOCK IMEDIAT -> wifi off -> loading-ul se aude,
+  dar la trecerea in error audio se opreste complet (liniste pe lock screen).
+- Daca aplicatia a trecut O DATA prin eroare cu ecranul deschis (iOS a auzit
+  efectiv elementul de eroare), ciclurile urmatoare din lock merg corect.
+- Interpretare: warmUp-ul de o fractiune de secunda la gestul de play nu e
+  suficient ca iOS sa "binecuvanteze" elementul de eroare daca lock-ul vine
+  imediat; loading-ul merge pentru ca porneste chiar in call stack-ul
+  gestului, cu aplicatia in fata. Supervisor-ul care reincearca la 2.5s e
+  refuzat la nesfarsit din acelasi motiv (pornire proaspata in background).
+- Canalul unic de ton (loading care isi schimba src-ul in eroare, element
+  deja audibil) ocoleste exact refuzul asta.
+
 ### Planul initial (referinta)
 
 - Instalam `xstate` (fara `@xstate/react`).
