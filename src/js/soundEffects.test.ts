@@ -2,29 +2,42 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { audioInstance } from './soundEffects';
 
 /**
- * A fake HTMLAudioElement, just enough surface for audioInstance.
- * Mirrors the real element's src semantics: the property assignment is
- * reflected into the attribute, which is what ensure() inspects.
+ * A fake HTMLAudioElement, just enough surface for audioInstance. Mirrors
+ * the real element where it matters: the src property reflects into the
+ * attribute, and a DENIED play() (iOS autoplay policy) leaves it paused.
  */
-function fakeAudioElement() {
+function fakeAudioElement(tone: string) {
   const el = {
     volume: 1,
     currentTime: 0,
     paused: true,
     playCalls: 0,
+    denied: false,
     playResult: Promise.resolve() as Promise<void>,
     dataset: {} as Record<string, string>,
     _srcAttr: null as string | null,
     set src(value: string) { this._srcAttr = value; },
     get src(): string { return this._srcAttr ?? ''; },
     getAttribute(name: string) { return name === 'src' ? this._srcAttr : null; },
+    addEventListener() {},
     play() {
       this.playCalls++;
-      this.paused = false;
+      if (!this.denied) this.paused = false;
       return this.playResult;
     },
     pause() { this.paused = true; },
-    querySelector: () => ({ src: 'http://sounds.test/tone.mp3' }),
+    /** Backgrounded-iOS mode: every play() is denied, element stays paused. */
+    deny() {
+      this.denied = true;
+      const rejection = Promise.reject<void>(Object.assign(new Error('denied'), { name: 'NotAllowedError' }));
+      rejection.catch(() => {}); // pre-handled — audioInstance attaches its own catch later
+      this.playResult = rejection;
+    },
+    allow() {
+      this.denied = false;
+      this.playResult = Promise.resolve();
+    },
+    querySelector: () => ({ src: `http://sounds.test/${tone}.mp3` }),
   };
   return el;
 }
@@ -33,20 +46,28 @@ function flushPromises() {
   return new Promise(resolve => setTimeout(resolve, 0));
 }
 
-describe('audioInstance ensure()', () => {
-  let el: ReturnType<typeof fakeAudioElement>;
-  let resolveFetch: (r: Response) => void;
+// The pair, as main.ts wires it: loading + error, partners of each other.
+// Blob preloads resolve immediately so tones are distinct blob: URLs.
+async function makePair() {
+  const loadEl = fakeAudioElement('loading');
+  const errEl = fakeAudioElement('error');
+  const loading = audioInstance(loadEl as unknown as HTMLAudioElement);
+  const error = audioInstance(errEl as unknown as HTMLAudioElement);
+  loading.setPartner(error);
+  error.setPartner(loading);
+  await loading.preloadBlob();
+  await error.preloadBlob();
+  return { loadEl, errEl, loading, error };
+}
 
+describe('feedback sounds — the tone-swap rule', () => {
   beforeEach(() => {
-    el = fakeAudioElement();
-    // No Cache API, and a fetch we control — the blob preload stays pending
-    // until the test resolves it.
+    let counter = 0;
     vi.stubGlobal('window', {});
-    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => {
-      resolveFetch = resolve;
-    })));
+    // Blob preloads succeed instantly; each instance gets a distinct URL.
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(new Response(new Blob(['x'])))));
     vi.stubGlobal('URL', {
-      createObjectURL: vi.fn(() => 'blob:fake'),
+      createObjectURL: vi.fn(() => `blob:tone-${++counter}`),
       revokeObjectURL: vi.fn(),
     });
   });
@@ -55,69 +76,105 @@ describe('audioInstance ensure()', () => {
     vi.unstubAllGlobals();
   });
 
-  it('does not poke the element while the initial play() still waits for the blob', async () => {
-    const sound = audioInstance(el as unknown as HTMLAudioElement);
+  it('from silence, a tone starts on its own element', async () => {
+    const { loadEl, loading } = await makePair();
 
-    sound.play();            // blob preload pending — nothing started yet
-    await flushPromises();   // let the preload reach the (unresolved) fetch
-    expect(el.playCalls).toBe(0);
-
-    // Supervisor tick lands mid-preload. The old bug: ensure() called
-    // play() on the empty src, the rejection flipped isPlaying to false,
-    // and the pending start bailed — one extra tick of silence.
-    sound.ensure();
-    expect(el.playCalls).toBe(0);
-
-    // When the blob finally lands, the original play() must still fire.
-    resolveFetch(new Response(new Blob(['x'])));
-    await flushPromises();
-    expect(el.playCalls).toBe(1);
-    expect(el.getAttribute('src')).toBe('blob:fake');
+    loading.play();
+    expect(loadEl.playCalls).toBe(1);
+    expect(loadEl.getAttribute('src')).toBe('blob:tone-1');
+    expect(loadEl.paused).toBe(false);
   });
 
-  it('still restarts a started element the OS paused', async () => {
-    const sound = audioInstance(el as unknown as HTMLAudioElement);
+  it('changing tones swaps the src of the playing element — the other element never starts', async () => {
+    const { loadEl, errEl, loading, error } = await makePair();
 
-    sound.play();
-    await flushPromises();
-    resolveFetch(new Response(new Blob(['x'])));
-    await flushPromises();
-    expect(el.playCalls).toBe(1);
+    // loading → error (applyFx order: the new tone plays, then the old stops)
+    loading.play();
+    error.play();
+    loading.stop();
 
-    el.paused = true;        // backgrounded: the OS paused it
-    sound.ensure();
-    expect(el.playCalls).toBe(2);
+    expect(loadEl.paused).toBe(false);                    // still the live element
+    expect(loadEl.getAttribute('src')).toBe('blob:tone-2'); // …now sounding the error tone
+    expect(errEl.playCalls).toBe(0);                      // error element untouched
   });
 
-  it('restarts from scratch when a play() was rejected outright', async () => {
-    const sound = audioInstance(el as unknown as HTMLAudioElement);
+  it('switching back reclaims the element for its own tone — still gapless', async () => {
+    const { loadEl, errEl, loading, error } = await makePair();
 
-    sound.play();
-    await flushPromises();
-    const denied = Promise.reject(Object.assign(new Error('denied'), { name: 'NotAllowedError' }));
-    denied.catch(() => {}); // pre-handle: audioInstance attaches its own catch later
-    el.playResult = denied;
-    resolveFetch(new Response(new Blob(['x'])));
-    await flushPromises();   // startPlayback ran, its play() was denied
-    expect(el.playCalls).toBe(1);
+    loading.play();
+    error.play();
+    loading.stop();          // loadEl carries the error tone
 
-    el.playResult = Promise.resolve();
-    sound.ensure();          // isPlaying flipped false → full play() again
-    await flushPromises();
-    expect(el.playCalls).toBe(2);
+    // error → loading (user retries a station)
+    loading.play();
+    error.stop();
+
+    expect(loadEl.paused).toBe(false);
+    expect(loadEl.getAttribute('src')).toBe('blob:tone-1'); // own tone again
+    expect(errEl.playCalls).toBe(0);
   });
 
-  it('stop() detaches the element so ensure() has nothing to resurrect', async () => {
-    const sound = audioInstance(el as unknown as HTMLAudioElement);
+  it('a denied swap keeps the current tone audible — never trade audible for silent', async () => {
+    const { loadEl, errEl, loading, error } = await makePair();
 
-    sound.play();
+    loading.play();
+    loadEl.deny();           // locked iPhone: even the continuation is refused
+    error.play();
+    loading.stop();
     await flushPromises();
+
+    expect(loadEl.getAttribute('src')).toBe('blob:tone-1'); // reverted to its own tone
+    expect(errEl.playCalls).toBe(0);
+  });
+
+  it('a user stop silences everything, including a carrying element', async () => {
+    const { loadEl, errEl, loading, error } = await makePair();
+
+    loading.play();
+    error.play();
+    loading.stop();          // loadEl carries the error tone
+
+    // applyFx for idle/paused: both tones stop.
+    loading.stop();
+    error.stop();
+
+    expect(loadEl.paused).toBe(true);
+    expect(loadEl.getAttribute('src')).toBe('');
+    expect(errEl.paused).toBe(true);
+  });
+
+  it('a user gesture revives a desired-but-silent sound (the tap is never squandered)', async () => {
+    const { errEl, error } = await makePair();
+
+    errEl.deny();            // dead session: the fresh start was denied
+    error.play();
+    await flushPromises();
+    expect(errEl.paused).toBe(true);
+
+    errEl.allow();           // unlock + tap: play works inside a gesture
+    error.warmUp();
+    expect(errEl.paused).toBe(false);
+    expect(errEl.getAttribute('src')).toBe('blob:tone-2');
+  });
+
+  it('the supervisor does not disturb a play() still waiting for its blob', async () => {
+    // Regression guard for a real silence bug: an ensure() tick landing
+    // mid-preload used to reject on the empty src and cancel the pending
+    // start, adding a tick of silence right when the sound mattered.
+    const loadEl = fakeAudioElement('loading');
+    const loading = audioInstance(loadEl as unknown as HTMLAudioElement);
+    let resolveFetch!: (r: Response) => void;
+    (fetch as ReturnType<typeof vi.fn>).mockImplementation(
+      () => new Promise<Response>((resolve) => { resolveFetch = resolve; }),
+    );
+
+    loading.play();          // blob preload pending — nothing started yet
+    await flushPromises();
+    loading.ensure();
+    expect(loadEl.playCalls).toBe(0);
+
     resolveFetch(new Response(new Blob(['x'])));
     await flushPromises();
-    expect(el.playCalls).toBe(1);
-
-    sound.stop();
-    expect(el.paused).toBe(true);
-    expect(el.getAttribute('src')).toBe('');
+    expect(loadEl.playCalls).toBe(1); // the original start still fired
   });
 });
