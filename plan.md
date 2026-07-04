@@ -175,6 +175,10 @@ cu `tone: 'loading'|'error'|'none'` in STATE_FX — overlap imposibil prin
 constructie, schimbarea de ton = swap de src pe elementul care deja canta
 (exact continuarea permisa de iOS). De facut eventual in Faza 4 (XState),
 cu re-validare completa pe device.
+[DEPASIT 2026-07-04 — ideea "un singur element" a fost retrasa; vezi
+CORECTIA DE DIRECTIE din sectiunea 4b: fara element partener nu exista
+plasa "never trade audible for silent", iar golul de swap ramane fatal
+pe iPhone blocat (a0aec46).]
 
 ## Faza 2: TypeScript [gata]
 
@@ -289,8 +293,15 @@ Implementat conform planului de mai jos. Note:
 Ramane separat (vezi sectiunea de mai jos "Redesign audioInstance") — cere
 re-validare pe device (lock screen, prev/next, offline).
 
-Repro observat pe iPhone (Adrian, 2026-07-04) — cazul exact pe care canalul
-de ton il rezolva prin constructie:
+CERINTA EXPLICITA (Adrian, 2026-07-04): sunetul de eroare TREBUIE sa se auda
+pe lock screen DIN PRIMA — nu doar dupa ce aplicatia a trecut o data prin
+eroare cu ecranul deschis. Repro-ul de mai jos e deci un BUG de cerinta, nu
+o limitare acceptata. PR #41 a demonstrat pe iPhone ca e realizabil (carry);
+4b il reconstruieste curat si devine URMATOAREA FAZA dupa R4 (inaintea
+R5/R6 — vezi ordinea actualizata in planul de refactor).
+
+Repro observat pe iPhone (Adrian, 2026-07-04) — cazul exact pe care
+mecanismul handoff/carry il rezolva:
 - Flux OK: play din app, folosire normala, lock -> wifi off -> loading sound
   + imagine loading -> apoi eroare cu sunet -> wifi on -> revine singur.
 - Caveat: play din app si LOCK IMEDIAT -> wifi off -> loading-ul se aude,
@@ -302,8 +313,49 @@ de ton il rezolva prin constructie:
   imediat; loading-ul merge pentru ca porneste chiar in call stack-ul
   gestului, cu aplicatia in fata. Supervisor-ul care reincearca la 2.5s e
   refuzat la nesfarsit din acelasi motiv (pornire proaspata in background).
-- Canalul unic de ton (loading care isi schimba src-ul in eroare, element
-  deja audibil) ocoleste exact refuzul asta.
+
+CORECTIE DE DIRECTIE (2026-07-04, dupa recitirea istoricului cu Adrian):
+NU "un singur element de feedback". Istoria branch-ului PR #41 arata de ce:
+- a0aec46: play() doar INITIAZA redarea (decode/buffer async) — orice gol
+  real de liniste pe iPhone blocat omoara sesiunea si play()-ul pendinte e
+  refuzat. De aceea sunetul vechi trebuie sa cante PANA CAND cel nou e
+  efectiv audibil ('playing') — deferred stop intre DOUA elemente.
+- 31d684a: carry-ul (elementul care deja canta isi schimba src-ul pe tonul
+  partenerului refuzat) e LAST RESORT, cu regula "never trade audible for
+  silent": o singura tentativa, si daca si continuarea e refuzata, revine
+  la sunetul propriu. Un element unic face din swap singura cale, fara
+  plasa de siguranta — un swap esuat inseamna liniste totala.
+- Handoff-ul feedback <-> player principal ramane oricum intre doua
+  elemente; "un singur element" nu-l elimina.
+Directia 4b devine: re-implementarea semanticii VERIFICATE PE DEVICE din
+PR #41 (deferred stop + carry last-resort + reclaim + never-trade-audible-
+for-silent), dar condusa din masina/reconciler — precisa si testabila unit,
+nu coordonare event-driven ad-hoc in stratul DOM (motivul revertului a fost
+CUM era scrisa, nu CA nu mergea).
+
+Repro suplimentar (Adrian, 2026-07-04) — gestul irosit, diagnoza defectului
+"isPlaying = intentie, nu realitate":
+- play → lock → wifi off → loading porneste, apoi liniste la eroare (stiut).
+- Deblocat cu aplicatia in fata: ecranul de eroare se vede, NIMIC nu se
+  aude — deblocarea nu e gest in pagina, iar dupa moartea sesiunii iOS
+  refuza si in foreground play()-urile programatice (supervisor).
+- next/prev: ecranul ramane, tot fara sunet. Gestul userului e IROSIT:
+  la click, isPlaying e adesea true (incercare programatica refuzata inca
+  in zbor), asa ca warmUp() si play() fac early-return pe intentie si
+  niciun element.play() nu ruleaza in call stack-ul gestului.
+- stop + play: se aude — stop() reseteaza fortat intentia (gen++, src=''),
+  deci play-ul urmator chiar executa element.play() inauntrul gestului.
+Regula noua pentru reconciler: ORICE gest de user reconciliaza realitatea —
+daca elementul cerut de stare nu canta EFECTIV (element.paused), play() se
+executa atunci, in stack-ul gestului, indiferent de flag-ul de intentie.
+Ideal si reconciliere pe visibilitychange la revenirea in aplicatie.
+
+Criterii de acceptare R4b (pe iPhone, toate cu wifi off la momentul potrivit):
+1. play → lock IMEDIAT → wifi off → eroarea se aude DIN PRIMA (carry).
+2. In starea muta istorica: deblocare + next/prev → sunetul revine din
+   gestul ala (reconcile-on-gesture).
+3. stop + play continua sa mearga ca azi.
+4. Fluxul normal (eroare auzita cu app deschisa, apoi lock) ramane intact.
 
 ### Planul initial (referinta)
 
@@ -424,15 +476,20 @@ Sursa: review multi-agent pe intervalul `3e36147..HEAD` (ultimele 2 zile) —
 
 ## Ce NU facem in acest plan
 
-- Faza 4b (reconcile() in audioInstance + canal unic de feedback cu tone in
-  STATE_FX) ramane separata — cere re-validare completa pe device. Aici facem
-  doar fix-ul minim al race-ului ensure() (R4), compatibil cu redesignul viitor.
+- (Actualizat 2026-07-04) Faza 4b NU mai e amanata: cerinta explicita a lui
+  Adrian — sunetul de eroare audibil pe lock screen DIN PRIMA — o face
+  obligatorie. Intra in ordine imediat dupa R4, ca faza R4b (handoff/carry
+  condus din masina, vezi CORECTIA DE DIRECTIE din sectiunea 4b). Cere
+  re-validare completa pe device inainte de merge.
 - NU consolidam cele 3 hook-uri de re-asertare din mediaSession.ts
   (play/playing, timeupdate, pause) — empirism iOS/macOS calit pe device
   (d798cc9, 2933d78, 5106a92). Le atingem doar prin predicate partajate (R2),
   fara sa schimbam timing-ul apelurilor.
 
-## Faza R1: curatenie mecanica — zero schimbare de comportament
+STATUS (2026-07-04): R1 (PR #45), R2 (PR #46), R3 (PR #47) — MERGED.
+R3 verificat pe device de Adrian inainte de merge. Urmeaza R4.
+
+## Faza R1: curatenie mecanica — zero schimbare de comportament [gata]
 
 Numai stersaturi si extrageri; bundle-ul si comportamentul identice.
 
@@ -458,7 +515,7 @@ Numai stersaturi si extrageri; bundle-ul si comportamentul identice.
 
 Verificare: typecheck, 63→~62 unit (unul sters), build, e2e integral neatins.
 
-## Faza R2: sursa unica pentru clasificarea starilor
+## Faza R2: sursa unica pentru clasificarea starilor [gata]
 
 Clasificarea "ce e audibil / cum se raporteaza playbackState" exista azi in
 4 liste de mana (main.ts:183, mediaSession.ts:44, :94, :105-106) care au
@@ -476,7 +533,7 @@ divergat deja o data (a667b7f).
 Verificare: typecheck, unit, e2e neatins. Diff-ul de bundle trebuie sa fie
 doar renamings.
 
-## Faza R3: resume si intentiile userului intra in masina
+## Faza R3: resume si intentiile userului intra in masina [gata]
 
 Cea mai valoroasa faza — inchide 2 bug-uri confirmate si goleste adaptorul.
 
@@ -563,9 +620,12 @@ statiilor raman disponibile offline dupa prima redare).
 
 ## Ordine si estimare
 
-R1 → R2 → R3 → R4 → R5 → R6. R1-R2 sunt mecanice (o sesiune). R3 e miezul
-(masina + adaptor + mediaSession, cu device smoke). R4 marunt. R5 cere
-atentie la empirismul iOS. R6 independent (poate fi facut oricand dupa R1).
+R1 → R2 → R3 → R4 → R4b → R5 → R6. R1-R2 sunt mecanice (o sesiune). R3 e
+miezul (masina + adaptor + mediaSession, cu device smoke). R4 marunt.
+R4b (handoff/carry din masina) e cerinta lock-screen a lui Adrian — cea mai
+empirica faza, cu re-validare completa pe iPhone (play→lock imediat→wifi
+off→eroarea se aude DIN PRIMA). R5 cere atentie la empirismul iOS. R6
+independent (poate fi facut oricand dupa R1).
 
 ## Definition of done
 
