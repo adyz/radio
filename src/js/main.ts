@@ -46,6 +46,11 @@ initMediaSession({ hasRestoredStation });
 
 const loadingNoiseInstance = audioInstance(loadingNoise);
 const errorNoiseInstance = audioInstance(errorNoise);
+// Each sound hands off gracefully to the other: deferred stop until the
+// replacement is audible, carry when iOS denies the replacement's start
+// (see the protocol comment in soundEffects.ts).
+loadingNoiseInstance.setPartner(errorNoiseInstance);
+errorNoiseInstance.setPartner(loadingNoiseInstance);
 
 // Preload audio blobs once per page. Re-called from user interactions as a
 // retry if the eager page-load preload failed — fetch() doesn't need a user
