@@ -8,7 +8,7 @@
  */
 
 import { createActor } from 'xstate';
-import { createRadioMachine } from './radioMachine';
+import { createRadioMachine, isAbortError } from './radioMachine';
 import type { RadioDeps, RadioState } from './radioMachine';
 
 /** The clock shape xstate actors accept (not exported by the library).
@@ -58,8 +58,8 @@ export function createRadioCore(
 
   const getState = (): RadioState => actor.getSnapshot().value as RadioState;
 
-  function playRadio(index: number, _isRetry?: boolean) {
-    actor.send({ type: 'PLAY', index, isRetry: _isRetry });
+  function playRadio(index: number) {
+    actor.send({ type: 'PLAY', index });
   }
 
   function stopRadio() {
@@ -86,7 +86,7 @@ export function createRadioCore(
   }
 
   function handleResumeError(error: unknown) {
-    if ((error as { name?: string } | null | undefined)?.name === 'AbortError') return;
+    if (isAbortError(error)) return;
     try {
       deps.playerPause();
     } catch (_) {
@@ -95,27 +95,14 @@ export function createRadioCore(
     actor.send({ type: 'RESUME_FAILED' });
   }
 
-  function resumePlayer() {
-    try {
-      const playPromise = deps.playerPlay();
-      if (!playPromise || typeof playPromise.catch !== 'function') {
-        return Promise.resolve(playPromise);
-      }
-      return playPromise.catch(handleResumeError);
-    } catch (error) {
-      handleResumeError(error);
-      return Promise.resolve();
-    }
-  }
-
   function resumeRadio() {
-    return resumePlayer();
+    return deps.playerPlay().catch(handleResumeError);
   }
 
   function togglePlayPause() {
     if (deps.playerIsPaused()) {
       const s = getState();
-      if (s === 'paused') return resumePlayer();
+      if (s === 'paused') return resumeRadio();
       else if (s === 'idle' || s === 'error' || s === 'recovering') {
         playRadio(deps.getSelectedIndex());
       }
@@ -135,7 +122,7 @@ export function createRadioCore(
     if (s === 'idle' || s === 'error' || s === 'recovering') {
       playRadio(deps.getSelectedIndex());
     } else if (s === 'paused') {
-      return resumePlayer();
+      return resumeRadio();
     }
   }
 
@@ -153,7 +140,6 @@ export function createRadioCore(
     onPlayerError,
     retryFromError,
     onPlayButtonClick,
-    _getRetryCount: () => actor.getSnapshot().context.retryCount,
     _getRecoveryCount: () => actor.getSnapshot().context.recoveryCount,
   };
 }

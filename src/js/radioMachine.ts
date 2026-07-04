@@ -83,6 +83,11 @@ export const USER_PAUSE_INTENT_MS = 2000; // how long a pauseRadio() call explai
 export const LONG_PAUSE_RESTART_MS = 2000; // paused longer than this ⇒ restart the live stream
 type SoundFx = 'play' | 'stop' | 'keep';
 
+/** Our own pause/src change interrupting a pending play() rejects with this. */
+export function isAbortError(error: unknown): boolean {
+  return (error as { name?: string } | null | undefined)?.name === 'AbortError';
+}
+
 interface StateFx {
   button: PlaybackButton;
   loading: SoundFx;
@@ -115,7 +120,7 @@ export interface RadioContext {
 }
 
 export type RadioEvent =
-  | { type: 'PLAY'; index: number; isRetry?: boolean }
+  | { type: 'PLAY'; index: number }
   | { type: 'STOP' }
   | { type: 'USER_PAUSE_INTENT' }
   | { type: 'RESUME_FAILED' }
@@ -130,6 +135,20 @@ export function createRadioMachine(deps: RadioDeps) {
     deps.playerPause();
     deps.playerSetSrc('');
   };
+
+  // The one failure policy: retry while attempts remain, otherwise begin a
+  // new error cycle. `extra` actions run on both branches.
+  const streamFailure = (...extra: Array<'stopPlayer' | 'clearPauseTime'>) => [
+    { guard: 'canRetry' as const, target: 'retrying' as const, actions: [...extra, 'incrementRetryCount' as const] },
+    { target: 'error' as const, actions: [...extra, 'beginErrorCycle' as const] },
+  ];
+
+  // Network is back → attempt recovery; still offline → re-check on a fixed
+  // cadence without escalating (nothing was attempted).
+  const tryRecover = [
+    { guard: 'isOnline' as const, target: 'recovering' as const, actions: 'clearOfflineRecheck' as const },
+    { target: 'error' as const, reenter: true, actions: 'markOfflineRecheck' as const },
+  ];
 
   return setup({
     types: {
@@ -151,10 +170,7 @@ export function createRadioMachine(deps: RadioDeps) {
       pausedTooLong: ({ context }) =>
         context.lastPauseTime !== null &&
         deps.performanceNow() - context.lastPauseTime > LONG_PAUSE_RESTART_MS,
-      isAbortError: ({ event }) => {
-        const error = (event as { error?: unknown }).error;
-        return (error as { name?: string } | null | undefined)?.name === 'AbortError';
-      },
+      isAbortError: ({ event }) => isAbortError((event as { error?: unknown }).error),
     },
 
     delays: {
@@ -223,8 +239,7 @@ export function createRadioMachine(deps: RadioDeps) {
         stationIndex: (event as { index: number }).index,
       })),
       syncSelectedIndex: ({ context }) => deps.setSelectedIndex(context.stationIndex),
-      resetAttemptCounters: assign(({ event }) =>
-        (event as { isRetry?: boolean }).isRetry ? {} : { retryCount: 0, recoveryCount: 0 }),
+      resetAttemptCounters: assign({ retryCount: 0, recoveryCount: 0 }),
       incrementRetryCount: assign(({ context }) => ({ retryCount: context.retryCount + 1 })),
       resetRetryCount: assign({ retryCount: 0 }),
       resetRecoveryCount: assign({ recoveryCount: 0 }),
@@ -305,17 +320,13 @@ export function createRadioMachine(deps: RadioDeps) {
               // An AbortError just means our own pause/src change interrupted
               // play() — stay and let the loading timeout decide.
               { guard: 'isAbortError' },
-              { guard: 'canRetry', target: 'retrying', actions: 'incrementRetryCount' },
-              { target: 'error', actions: 'beginErrorCycle' },
+              ...streamFailure(),
             ],
           },
           { src: 'soundSupervisor', input: { sound: 'loading' } as const },
         ],
         after: {
-          LOADING_TIMEOUT: [
-            { guard: 'canRetry', target: 'retrying', actions: ['stopPlayer', 'incrementRetryCount'] },
-            { target: 'error', actions: ['stopPlayer', 'beginErrorCycle'] },
-          ],
+          LOADING_TIMEOUT: streamFailure('stopPlayer'),
         },
       },
 
@@ -334,10 +345,7 @@ export function createRadioMachine(deps: RadioDeps) {
         entry: [{ type: 'applyFx', params: { state: 'playing' } }],
         invoke: { src: 'watchdog' },
         on: {
-          STALLED: [
-            { guard: 'canRetry', target: 'retrying', actions: ['incrementRetryCount', 'clearPauseTime'] },
-            { target: 'error', actions: ['beginErrorCycle', 'clearPauseTime'] },
-          ],
+          STALLED: streamFailure('clearPauseTime'),
           PLAYER_PAUSE: [
             {
               guard: 'unexpectedOfflinePause',
@@ -350,10 +358,7 @@ export function createRadioMachine(deps: RadioDeps) {
             // phone call, another app taking audio) — stay paused.
             { target: 'paused', actions: ['consumeUserPauseIntent', 'markPauseTime'] },
           ],
-          PLAYER_ERROR: [
-            { guard: 'canRetry', target: 'retrying', actions: ['incrementRetryCount', 'clearPauseTime'] },
-            { target: 'error', actions: ['beginErrorCycle', 'clearPauseTime'] },
-          ],
+          PLAYER_ERROR: streamFailure('clearPauseTime'),
         },
       },
 
@@ -370,10 +375,7 @@ export function createRadioMachine(deps: RadioDeps) {
             },
             { target: 'playing', actions: 'clearPauseTime' },
           ],
-          PLAYER_ERROR: [
-            { guard: 'canRetry', target: 'retrying', actions: ['incrementRetryCount', 'clearPauseTime'] },
-            { target: 'error', actions: ['beginErrorCycle', 'clearPauseTime'] },
-          ],
+          PLAYER_ERROR: streamFailure('clearPauseTime'),
           // A failed resume keeps us paused; re-enter to re-apply the fx
           // (same as the old setState('paused') re-application).
           RESUME_FAILED: { target: 'paused', reenter: true },
@@ -384,17 +386,10 @@ export function createRadioMachine(deps: RadioDeps) {
         entry: [{ type: 'applyFx', params: { state: 'error' } }],
         invoke: { src: 'soundSupervisor', input: { sound: 'error' } as const },
         after: {
-          RECOVERY_DELAY: [
-            { guard: 'isOnline', target: 'recovering', actions: 'clearOfflineRecheck' },
-            // Still offline: re-check on a fixed cadence without escalating.
-            { target: 'error', reenter: true, actions: 'markOfflineRecheck' },
-          ],
+          RECOVERY_DELAY: tryRecover,
         },
         on: {
-          RETRY_FROM_ERROR: [
-            { guard: 'isOnline', target: 'recovering', actions: 'clearOfflineRecheck' },
-            { target: 'error', reenter: true, actions: 'markOfflineRecheck' },
-          ],
+          RETRY_FROM_ERROR: tryRecover,
         },
       },
 

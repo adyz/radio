@@ -32,6 +32,14 @@ export function initStationSelector({ onSelect }: { onSelect(index: number): voi
     });
   }
 
+  function scrollOptionIntoView(index: number) {
+    selectorOptionButtons[index]?.scrollIntoView({
+      behavior: "auto",
+      block: "nearest",
+      inline: "nearest",
+    });
+  }
+
   function focusOption(index: number) {
     if (!selectorOptionButtons.length) return;
 
@@ -41,17 +49,11 @@ export function initStationSelector({ onSelect }: { onSelect(index: number): voi
     selectorFocusedIndex = nextIndex;
     syncSelectorSelection();
 
-    const button = selectorOptionButtons[selectorFocusedIndex];
-
-    button.focus({
+    selectorOptionButtons[selectorFocusedIndex].focus({
       preventScroll: true,
     });
 
-    button.scrollIntoView({
-      behavior: "auto",
-      block: "nearest",
-      inline: "nearest",
-    });
+    scrollOptionIntoView(selectorFocusedIndex);
   }
 
   function setSelectorExpanded(isExpanded: boolean) {
@@ -76,11 +78,7 @@ export function initStationSelector({ onSelect }: { onSelect(index: number): voi
     if (focusSelected) {
       focusOption(selectorFocusedIndex);
     } else {
-      selectorOptionButtons[selectorFocusedIndex]?.scrollIntoView({
-        behavior: "auto",
-        block: "nearest",
-        inline: "nearest",
-      });
+      scrollOptionIntoView(selectorFocusedIndex);
     }
   }
 
