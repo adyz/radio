@@ -10,6 +10,10 @@ Stack: Vite + TypeScript strict + module + XState v5 (+ Stately Inspector in
 dev via /?inspect). Ramas: Faza 4b (redesign audioInstance + canal de feedback
 cu tone in STATE_FX) — separat, cere re-validare pe device.
 
+URMEAZA: Plan de refactor post-review (2026-07-04) — vezi sectiunea de la
+finalul fisierului. Fazele R1-R6, pornite din review-ul multi-agent al
+intervalului 3e36147..HEAD.
+
 ## Context si obiectiv
 
 Aplicatia are deja o arhitectura buna: `radioCore.js` e logica pura cu dependency
@@ -381,3 +385,177 @@ Obiectiv: repo-ul reflecta noua arhitectura.
 - Deploy Vercel functional (inclusiv offline/PWA) din `dist/`.
 - Zero JS netipizat in `src/js/`; `build.mjs` si `stateMachine.ts` eliminate.
 - Comportament identic confirmat pe checklist-ul manual de paritate.
+
+---
+
+# Plan de refactor post-review (2026-07-04)
+
+Sursa: review multi-agent pe intervalul `3e36147..HEAD` (ultimele 2 zile) —
+7 finderi independenti + verificare adversariala. 10 constatari confirmate:
+6 de corectitudine (majoritatea pre-existente migrarii, una singura regresie),
+4 de curatenie/eficienta. Migrarea in sine a iesit curata.
+
+## Invarianti (identici cu migrarea)
+
+- Suita e2e existenta NU se modifica; teste NOI se pot ADAUGA (ca la
+  always-audible). E2e-ul vechi verde = dovada ca refactorul nu a stricat nimic.
+- "Always audible" ramane lege: play apasat => mereu un sunet; liniste doar
+  in idle/paused.
+- Fiecare faza = un PR separat, CI verde (typecheck + unit + build + e2e)
+  inainte de merge. Fazele care ating zona MediaSession/iOS cer smoke pe
+  device real inainte de merge (lock screen: play/pause/prev/next, offline).
+- Constantele de timing raman neschimbate.
+
+## Ce NU facem in acest plan
+
+- Faza 4b (reconcile() in audioInstance + canal unic de feedback cu tone in
+  STATE_FX) ramane separata — cere re-validare completa pe device. Aici facem
+  doar fix-ul minim al race-ului ensure() (R4), compatibil cu redesignul viitor.
+- NU consolidam cele 3 hook-uri de re-asertare din mediaSession.ts
+  (play/playing, timeupdate, pause) — empirism iOS/macOS calit pe device
+  (d798cc9, 2933d78, 5106a92). Le atingem doar prin predicate partajate (R2),
+  fara sa schimbam timing-ul apelurilor.
+
+## Faza R1: curatenie mecanica — zero schimbare de comportament
+
+Numai stersaturi si extrageri; bundle-ul si comportamentul identice.
+
+- radioCore.ts: dispare `_isRetry` din playRadio si `isRetry` din event-ul
+  PLAY; `resetAttemptCounters` devine `assign({ retryCount: 0, recoveryCount: 0 })`
+  (ramura isRetry e cod mort — verificat prin grep: niciun apelant).
+- radioCore.ts: sterge `_getRetryCount` (zero utilizari); unifica
+  `resumeRadio`/`resumePlayer` sub un singur nume (`resumeRadio`); simplifica
+  la `deps.playerPlay().catch(handleResumeError)` si sterge testul
+  'resumeRadio handles playerPlay without a promise' + ramura defensiva
+  non-promise (contrazice tipul `RadioDeps.playerPlay(): Promise<void>`).
+- radioMachine.ts: exporta `isAbortError(error: unknown)` ca functie si
+  foloseste-o in guard + radioCore (handleResumeError). soundEffects.ts o
+  poate refolosi la randul lui (2 situri).
+- radioMachine.ts: scarile de tranzitii duplicate devin constante numite:
+  array-ul identic din `error.after.RECOVERY_DELAY` / `error.on.RETRY_FROM_ERROR`
+  extras o singura data; scara {canRetry→retrying, altfel→error} (5 aparitii)
+  extrasa intr-un helper `streamFailure(extraActions)`.
+- mediaSession.ts: un singur helper `clearPositionState()` (feature-detectat)
+  inlocuieste cele 5 try/catch inline pe setPositionState.
+- stationSelector.ts: o functie `scrollOptionIntoView(index)` partajata
+  intre focusOption si openSelector.
+
+Verificare: typecheck, 63→~62 unit (unul sters), build, e2e integral neatins.
+
+## Faza R2: sursa unica pentru clasificarea starilor
+
+Clasificarea "ce e audibil / cum se raporteaza playbackState" exista azi in
+4 liste de mana (main.ts:183, mediaSession.ts:44, :94, :105-106) care au
+divergat deja o data (a667b7f).
+
+- radioMachine.ts: exporta predicate derivate/adiacente STATE_FX:
+  `isLoadingLike(s)` (loading|retrying|recovering), `isErrorLike(s)`
+  (error|recovering), si un `playbackStateFor(s)` pentru mediaSession.
+- Inlocuieste cele 4 situri pastrand comportamentul actual EXACT, inclusiv
+  divergenta din main.ts:183 (omite 'error') — acolo pastram lista actuala
+  printr-un predicat separat sau explicit, cu comentariu; decizia daca
+  divergenta e bug sau intentie se ia in R3/R5, nu aici.
+- Zero schimbare de comportament: doar mutare de adevar intr-un singur loc.
+
+Verificare: typecheck, unit, e2e neatins. Diff-ul de bundle trebuie sa fie
+doar renamings.
+
+## Faza R3: resume si intentiile userului intra in masina
+
+Cea mai valoroasa faza — inchide 2 bug-uri confirmate si goleste adaptorul.
+
+- Event nou `RESUME` in radioMachine:
+  - in `paused` + pausedTooLong → restart complet, DAR prin aceeasi logica
+    ca PLAY (cu guard-ul isOnline → altfel direct error) — inchide regresia
+    "resume offline dupa pauza lunga = 9s de loading in loc de fast-fail".
+  - in `paused` altfel → incercare de play in masina (invoked `attemptPlay`
+    intr-un sub-state/copil al lui paused cu fx identice cu paused; onDone →
+    playing, onError non-abort → paused reenter). Inlocuieste complet
+    resumePlayer + RESUME_FAILED din adaptor.
+  - in `idle`/`error`/`recovering` → echivalent cu PLAY(selectedIndex) —
+    inchide bug-ul "Play pe lock screen e no-op in error" si elimina
+    asimetria cu butonul de pe ecran.
+- Event nou `TOGGLE` in masina: `playing` → pauza (cu intentie marcata);
+  `paused`/`idle`/`error`/`recovering` → ca RESUME; `loading`/`retrying` →
+  STOP (decizie noua, aliniata cu handler-ul de pause de pe lock screen care
+  deja face stop in aceste stari) — inchide bug-ul "toggle in loading
+  reporneste redarea dupa ce userul a dat pauza". Test unit nou explicit.
+- mediaSession.ts: handler-ul 'play' trimite RESUME; handler-ul 'pause'
+  poate trimite un singur event (PAUSE_REQUESTED) cu politica stop-vs-pause
+  mutata in masina — dispare inca o lista de stari din stratul DOM.
+- radioCore.ts ramane adaptor pur de forwarding (playRadio/stopRadio/
+  toggle/resume = un send fiecare); pauseRadio pastreaza marcarea intentiei.
+- ATENTIE: fara stari RadioState noi vizibile in STATE_FX daca se poate
+  (sub-state-ul de resume mosteneste fx de paused); log-urile de tranzitie
+  raman lizibile.
+
+Verificare: unit noi pentru fiecare ramura RESUME/TOGGLE; e2e vechi neatins;
+e2e NOU pentru lock-screen-play-din-error e greu (mediaSession nu e
+scriptabil in Playwright) — acoperim unit + smoke manual. SMOKE PE DEVICE
+obligatoriu: lock screen play/pause/prev/next, resume dupa pauza lunga,
+offline.
+
+## Faza R4: fix-uri mici de comportament, fiecare cu testul lui
+
+- radioMachine.ts: `stopPlayer` pe tranzitiile STALLED si PLAYER_ERROR din
+  `playing` → `retrying` (simetric cu calea LOADING_TIMEOUT) — inchide
+  fereastra de 3s in care stream-ul reinviat canta sub tonul de loading.
+- soundEffects.ts: fix minim pentru race-ul ensure() vs preload in zbor:
+  ensure() nu mai apeleaza element.play() cand elementul nu are src valid
+  (dupa stop() src=''); in loc de asta reintra pe play() complet. Nu
+  anticipam reconcile() (4b) — doar eliminam fereastra de liniste de ~2.5s.
+- Ambele au teste unit dedicate (SimulatedClock pentru supervisor).
+
+Verificare: typecheck, unit (cu teste noi), e2e neatins.
+
+## Faza R5: recheck offline fara reenter + memoizare updateMediaSession
+
+Zona sensibila iOS — ultima faza de logica, cu smoke pe device.
+
+- radioMachine.ts: recheck-ul offline nu mai face reenter pe `error` (azi:
+  applyFx + teardown/recreate supervisor + MediaMetadata + img.src la fiecare
+  10s, la nesfarsit). Varianta preferata: sub-stari in error
+  (`error.waiting` cu after → self, guard isOnline → recovering) astfel incat
+  entry-ul starii `error` (fx + supervisor) ruleaza O DATA; alternativ
+  short-circuit in applyFx pe context.offlineRecheck. Contextul
+  `offlineRecheck` poate disparea complet daca sub-starile rezolva cadenta.
+- mediaSession.ts: updateMediaSession memoizeaza pe (state, displayText):
+  sare peste MediaMetadata/artwork/img.src/title cand nimic nu s-a schimbat.
+  ATENTIE: re-inregistrarea handler-elor si playbackState raman NEmemoizate
+  (empirism iOS — d798cc9); doar partea de metadata/DOM se scurteaza.
+  cloudinaryImageUrl se calculeaza o singura data (azi de 2 ori).
+
+Verificare: unit pentru cadenta recheck (nicio re-aplicare de fx intre
+tick-uri), e2e neatins, SMOKE PE DEVICE: telefon offline in error 5+ min cu
+ecranul blocat — widget-ul nu mai palpaie, bateria nu se scurge; revenire
+online → recovering → playing.
+
+## Faza R6: startup mai usor (cloudinary precache)
+
+- cloudinary.ts/main.ts: amana precacheStatusImages la `requestIdleCallback`
+  (fallback setTimeout) si redu la labels + statia curenta (azi: 22 de
+  imagini eager care concureaza cu stream-ul si sunetele la startup si ocupa
+  22/30 sloturi din trimCache).
+- Pagina nu mai face cache.put propriu (SW-ul deja cache-uieste toate
+  GET-urile cloudinary; azi aceiasi bytes se scriu de 2 ori).
+- Optional, acelasi PR: in sw.js, cache.put pentru app-shell trece pe
+  event.waitUntil (ca la cloudinary) si exclude /downloads/ (APK-ul de
+  2.4MB ajunge azi in APP_CACHE).
+
+Verificare: build, e2e neatins, smoke offline pe vite preview (posterele
+statiilor raman disponibile offline dupa prima redare).
+
+## Ordine si estimare
+
+R1 → R2 → R3 → R4 → R5 → R6. R1-R2 sunt mecanice (o sesiune). R3 e miezul
+(masina + adaptor + mediaSession, cu device smoke). R4 marunt. R5 cere
+atentie la empirismul iOS. R6 independent (poate fi facut oricand dupa R1).
+
+## Definition of done
+
+- Toate cele 10 constatari din review inchise sau explicit amanate (4b).
+- CI verde cap-coada in fiecare faza; e2e-ul vechi identic si verde.
+- radioCore.ts = forwarding pur (fara logica de playback in adaptor).
+- O singura sursa de adevar pentru clasificarea starilor si politica de
+  pause/resume — in masina, nu in stratul DOM.
+- Smoke pe device dupa R3 si R5 (lock screen + offline).

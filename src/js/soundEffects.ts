@@ -7,6 +7,8 @@
  * work offline and without any network round-trip at the critical moment.
  */
 
+import { isAbortError } from './radioMachine';
+
 // Keep in sync with src/public/sw.js so page-level preloads and SW precache
 // share the same durable sound cache.
 export const SOUND_CACHE_NAME = 'radio-sounds-v2';
@@ -84,7 +86,7 @@ export function audioInstance(htmlElement: HTMLAudioElement) {
     htmlElement.currentTime = 0;
     htmlElement.play().catch((error) => {
       if (gen !== playGeneration) return;
-      if (error.name !== 'AbortError') console.error('Error playing audio:', error);
+      if (!isAbortError(error)) console.error('Error playing audio:', error);
       isPlaying = false;
     });
   };
@@ -121,7 +123,7 @@ export function audioInstance(htmlElement: HTMLAudioElement) {
         const gen = playGeneration;
         htmlElement.play().catch((error) => {
           if (gen !== playGeneration) return;
-          if (error.name !== 'AbortError') isPlaying = false; // retried next tick
+          if (!isAbortError(error)) isPlaying = false; // retried next tick
         });
       }
     },

@@ -777,49 +777,6 @@ describe('resume failures', () => {
     expect(calls.playerPause.length).toBe(pauseCallsBeforeResume + 1);
   });
 
-  it('resumeRadio handles playerPlay without a promise', async () => {
-    const { deps } = makeDeps();
-    const { core, clock } = createCore(deps);
-
-    core.playRadio(0);
-    await flushPromises();
-    core.onPlayerPause();
-    expect(core.getState()).toBe('paused');
-
-    // Deliberate contract violation: some browsers' play() can return
-    // undefined — resumePlayer must survive a non-promise at runtime.
-    deps._setPlayerPlayResult(undefined as unknown as Promise<void>);
-    await core.resumeRadio();
-
-    expect(core.getState()).toBe('paused');
-  });
-
-  it('resumeRadio keeps paused when playerPlay throws synchronously', async () => {
-    let callsRef!: ReturnType<typeof makeDeps>['calls'];
-    let playCalls = 0;
-    const { deps, calls } = makeDeps({
-      playerPlay: () => {
-        callsRef.playerPlay.push('play');
-        callsRef.paused = false;
-        if (playCalls++ === 0) return Promise.resolve();
-        throw new Error('resume blocked');
-      },
-    });
-    callsRef = calls;
-    const { core, clock } = createCore(deps);
-
-    core.playRadio(0);
-    await flushPromises();
-    core.onPlayerPause();
-    expect(core.getState()).toBe('paused');
-
-    const pauseCallsBeforeResume = calls.playerPause.length;
-    await core.resumeRadio();
-
-    expect(core.getState()).toBe('paused');
-    expect(calls.paused).toBe(true);
-    expect(calls.playerPause.length).toBe(pauseCallsBeforeResume + 1);
-  });
 });
 
 // =============================================

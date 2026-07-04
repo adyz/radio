@@ -62,27 +62,27 @@ function reRegisterMediaSessionHandlers() {
   navigator.mediaSession.playbackState = 'playing';
   registerMediaSessionHandlers();
   // iOS picks up the sound effect's duration as "now playing" — clear it.
-  try { navigator.mediaSession.setPositionState({}); } catch (_) {}
+  clearPositionState();
 }
 loadingNoise.addEventListener('play', reRegisterMediaSessionHandlers);
 loadingNoise.addEventListener('playing', reRegisterMediaSessionHandlers);
 errorNoise.addEventListener('play', reRegisterMediaSessionHandlers);
 errorNoise.addEventListener('playing', reRegisterMediaSessionHandlers);
 
-// Mobile browsers re-read duration from the active <audio> element after our
-// initial setPositionState() clear, causing a countdown timer to appear.
-// Repeatedly clear it on every timeupdate tick so the OS never shows the
-// sound effect's finite duration.
-// Feature-detect once to avoid repeated exceptions on unsupported browsers.
+// Tells the OS there's no seekable timeline (mobile browsers otherwise show
+// the sound effect's finite duration as a countdown timer).
+// Feature-detected once to avoid repeated exceptions on unsupported browsers.
 let canClearPositionState = true;
-try { navigator.mediaSession.setPositionState({}); } catch (_) { canClearPositionState = false; }
-function clearSfxPositionState() {
+function clearPositionState() {
   if (canClearPositionState) {
     try { navigator.mediaSession.setPositionState({}); } catch (_) { canClearPositionState = false; }
   }
 }
-loadingNoise.addEventListener('timeupdate', clearSfxPositionState);
-errorNoise.addEventListener('timeupdate', clearSfxPositionState);
+clearPositionState();
+// Mobile browsers re-read duration from the active <audio> element after the
+// initial clear — re-clear on every timeupdate tick.
+loadingNoise.addEventListener('timeupdate', clearPositionState);
+errorNoise.addEventListener('timeupdate', clearPositionState);
 
 // When a sound effect pauses (e.g. loadingSound.stop() after stream loaded),
 // macOS briefly shows "Not Playing" because the active audio source just stopped.
@@ -93,7 +93,7 @@ function reassertPlaybackState() {
   const s = core.getState();
   if (s === 'playing' || s === 'loading' || s === 'retrying' || s === 'error' || s === 'recovering') {
     navigator.mediaSession.playbackState = 'playing';
-    try { navigator.mediaSession.setPositionState({}); } catch (_) {}
+    clearPositionState();
   }
 }
 loadingNoise.addEventListener('pause', reassertPlaybackState);
@@ -129,7 +129,7 @@ export const updateMediaSession = (newState: RadioState) => {
     // Clear position state for active/paused states — tells the OS there's no
     // seekable timeline, so it won't show a finite progress bar.
     if (isLive || isLoading || hasError || newState === 'paused') {
-      try { navigator.mediaSession.setPositionState({}); } catch (_) {}
+      clearPositionState();
     }
   }
 
