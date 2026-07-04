@@ -91,6 +91,13 @@ function reassertPlaybackState() {
 loadingNoise.addEventListener('pause', reassertPlaybackState);
 errorNoise.addEventListener('pause', reassertPlaybackState);
 
+// The presentation (metadata, poster, document title) is a pure function of
+// (state, station title) — re-rendering it when neither changed is wasted
+// work (and on iOS it re-fetches lock-screen artwork). Memoize on that key.
+// Handler re-registration and playbackState are deliberately NOT memoized:
+// iOS resets them out from under us (d798cc9), so they re-assert every call.
+let lastRender: { state: RadioState; title: string } | null = null;
+
 export const updateMediaSession = (newState: RadioState) => {
   const title = radioSelect.options[radioSelect.selectedIndex].text;
   const isIdle = newState === 'idle';
@@ -100,13 +107,17 @@ export const updateMediaSession = (newState: RadioState) => {
 
   const idleText = hasRestoredStation ? title : LABELS.appName;
   const displayText = isIdle ? idleText : isLoading ? LABELS.loading : hasError ? LABELS.error : title;
+  const changed = lastRender?.state !== newState || lastRender?.title !== title;
+  const artworkUrl = changed ? cloudinaryImageUrl(displayText, isLive) : '';
 
   if ('mediaSession' in navigator) {
-    navigator.mediaSession.metadata = new MediaMetadata({
-      title: isLoading ? `${LABELS.loading}${title}` : hasError ? `${LABELS.error} la încărcarea ${title}` : isIdle ? idleText : title,
-      artist: `${LABELS.appName}${isIdle && !hasRestoredStation ? '' : ` | ${title}`}`,
-      artwork: [{ src: cloudinaryImageUrl(displayText, isLive) }]
-    });
+    if (changed) {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: isLoading ? `${LABELS.loading}${title}` : hasError ? `${LABELS.error} la încărcarea ${title}` : isIdle ? idleText : title,
+        artist: `${LABELS.appName}${isIdle && !hasRestoredStation ? '' : ` | ${title}`}`,
+        artwork: [{ src: artworkUrl }]
+      });
+    }
 
     // Re-register ALL action handlers on every state transition.
     // iOS resets them when a different <audio> element (loading/error sound)
@@ -125,7 +136,10 @@ export const updateMediaSession = (newState: RadioState) => {
     }
   }
 
-  posterImage.querySelector('img')!.src = cloudinaryImageUrl(displayText, isLive);
-  document.title = `${isLoading ? "⏳" : ''} ${hasError ? '❤️‍🩹' : ''} ${isLive ? '🔴' : ''} ${isIdle ? idleText : isLoading ? `${LABELS.loading} ${title}` : hasError ? LABELS.error : title}`;
-  loadingMsg.innerText = isLoading ? `${LABELS.loading} ${title}` : '';
+  if (changed) {
+    posterImage.querySelector('img')!.src = artworkUrl;
+    document.title = `${isLoading ? "⏳" : ''} ${hasError ? '❤️‍🩹' : ''} ${isLive ? '🔴' : ''} ${isIdle ? idleText : isLoading ? `${LABELS.loading} ${title}` : hasError ? LABELS.error : title}`;
+    loadingMsg.innerText = isLoading ? `${LABELS.loading} ${title}` : '';
+  }
+  lastRender = { state: newState, title };
 };

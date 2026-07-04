@@ -1356,6 +1356,51 @@ describe('system pause vs user pause', () => {
     expect(clock.hasScheduled(RECOVERY_DELAY_MS)).toBe(true);
   });
 
+  it('an offline night in error is quiet work: rechecks re-run NO effects', async () => {
+    let online = true;
+    const { deps, calls } = makeDeps({ isOnline: () => online });
+    deps._setPlayerPlayResult(Promise.reject(new Error('fail')));
+    const { core, clock } = createCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    clock.increment(3000);
+    await flushPromises();
+    expect(core.getState()).toBe('error');
+    online = false;
+
+    // Snapshot every observable side effect after entering error…
+    clock.increment(RECOVERY_DELAY_MS); // land in the fixed-cadence recheck
+    const fxBefore = {
+      mediaSession: calls.mediaSession.length,
+      errorSound: calls.errorSound.length,
+      showButton: calls.showButton.length,
+      supervisors: (deps.setInterval as ReturnType<typeof vi.fn>).mock.calls.length,
+    };
+
+    // …then let a whole offline night of rechecks pass.
+    for (let i = 0; i < 50; i++) {
+      clock.increment(RECOVERY_DELAY_MS);
+      await flushPromises();
+    }
+    expect(core.getState()).toBe('error');
+
+    // The old reenter design re-applied ALL of these every 10s (metadata
+    // rebuild, sound re-assert, supervisor teardown+recreate) — a battery
+    // drain and lock-screen flicker. Now a recheck only re-arms its timer.
+    expect(calls.mediaSession.length).toBe(fxBefore.mediaSession);
+    expect(calls.errorSound.length).toBe(fxBefore.errorSound);
+    expect(calls.showButton.length).toBe(fxBefore.showButton);
+    expect((deps.setInterval as ReturnType<typeof vi.fn>).mock.calls.length).toBe(fxBefore.supervisors);
+
+    // And the recovery loop is still alive: net returns → next check plays.
+    online = true;
+    deps._setPlayerPlayResult(Promise.resolve());
+    clock.increment(RECOVERY_DELAY_MS);
+    await flushPromises();
+    expect(core.getState()).toBe('playing');
+  });
+
   it('an unexpected native pause while online still pauses (interruption, unplugged headphones)', async () => {
     const { deps } = makeDeps();
     const { core, clock } = createCore(deps);
