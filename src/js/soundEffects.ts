@@ -7,33 +7,27 @@
  * work offline and without any network round-trip at the critical moment.
  *
  * =====================================================================
- * Sound handoff protocol (rules verified on a real iPhone, 2026-07-03,
- * re-validated for R4b — see plan.md, faza R4b):
+ * The tone-swap rule (iOS behavior verified on a real iPhone; design
+ * decision by Adrian, 2026-07-04 — see plan.md, faza R4b):
  *
- *   1. Backgrounded iOS DENIES any fresh play() start — even on a warmed-up
- *      element, even while another element of the page is playing.
- *   2. Backgrounded iOS ALLOWS an element that is already playing to swap
- *      its src and continue (the playlist pattern).
- *   3. After the audio session dies, even FOREGROUND programmatic play()
- *      is denied — only a play() inside a user-gesture call stack revives
- *      it (see gesture reconcile in warmUp()).
+ *   Backgrounded iOS DENIES any fresh play() start, but ALLOWS an element
+ *   that is already playing to swap its src and continue (the playlist
+ *   pattern). After the audio session dies, even foreground programmatic
+ *   play() is denied — only a play() inside a user-gesture call stack
+ *   revives it.
  *
- * Product invariant: once the user pressed play, something must always be
- * audible. So when one feedback sound replaces the other (loading <-> error):
+ * So there is ONE mechanism, not a fallback chain:
  *
- *   - deferred stop  — the OLD sound keeps playing until the NEW one actually
- *     produces audio (its 'playing' event); no silent gap ever opens.
- *   - carry          — if the new sound still hasn't started by a supervisor
- *     tick (rule 1 denied it) while the old one is audible, the old ELEMENT
- *     carries the new sound: its src is swapped to the new tone (rule 2).
- *   - reclaim        — play()/stop() on a carrying element automatically
- *     restore its own sound / release the deferral.
- *   - gesture reconcile — every user gesture re-asserts the desired sound
- *     if its element is silent (rule 3): the intent flag must never
- *     squander a gesture.
- *
- * A user stop/pause silences both immediately: stopping a still-pending
- * sound settles it, which releases the partner's deferred stop too.
+ *   - At most one feedback element is live at a time. Changing tones
+ *     (loading <-> error) NEVER starts the other element — it swaps the
+ *     src of the element that is already playing (carry). Gapless by
+ *     construction, and exactly the continuation iOS permits.
+ *   - A fresh element start happens only from silence (first play, station
+ *     change while idle) — always foreground/gesture contexts.
+ *   - A denied swap restores the element's own tone: never trade something
+ *     audible for silence.
+ *   - Every user gesture reconciles reality (warmUp): a desired-but-silent
+ *     sound restarts inside the gesture call stack.
  * =====================================================================
  */
 
@@ -77,24 +71,28 @@ async function getSoundResponse(src: string): Promise<Response> {
 }
 
 export interface SoundInstance {
+  /** My tone must sound: swap it onto the live partner element if one is
+   *  audible (the only start backgrounded iOS allows), else start fresh. */
   play(): void;
+  /** My tone must no longer sound — wherever it currently lives. */
   stop(): void;
   /** Supervisor hook: re-assert playback if a play() was denied or the OS
-   *  paused the element; escalates to carrySound() on the partner. */
+   *  paused the element carrying this tone. */
   ensure(): void;
   /** User-gesture hook: reconcile reality (restart a denied-but-desired
    *  sound inside the gesture stack) or bless an idle element. */
   warmUp(): void;
   preloadBlob(): Promise<string | null>;
-  /** True between play() and the element actually producing audio. */
-  isStartPending(): boolean;
-  /** Runs callback once this sound starts OR is stopped — whichever first. */
-  onStartSettled(callback: () => void): void;
   setPartner(partner: SoundInstance): void;
   isAudiblyPlaying(): boolean;
-  /** Carry the partner's sound on this (already playing) element: swap src
-   *  and continue — the one playback start backgrounded iOS allows. */
+  /** True while this element is sounding the PARTNER's tone. */
+  isCarrying(): boolean;
+  /** Swap this (already playing) element's src to the given tone. */
   carrySound(src: string): void;
+  /** Stop this element because the tone it carries is no longer wanted. */
+  stopCarried(): void;
+  /** Re-assert playback if this live element sits paused (denied/OS pause). */
+  reassert(): void;
 }
 
 export function audioInstance(htmlElement: HTMLAudioElement): SoundInstance {
@@ -105,19 +103,10 @@ export function audioInstance(htmlElement: HTMLAudioElement): SoundInstance {
   let preloadPromise: Promise<string | null> | null = null;
   htmlElement.dataset.blobReady = 'false';
 
-  // --- Handoff state (see protocol above) ---
   let partner: SoundInstance | null = null;
-  let startPending = false;
-  let deferredStopGeneration = 0; // invalidates a queued deferred stop
-  let carriedSrc: string | null = null; // set while carrying the partner's sound
-  let carryAttempted = false; // ask the partner to carry at most once per play cycle
-  const startSettlers: Array<() => void> = [];
+  let carriedSrc: string | null = null; // set while sounding the partner's tone
 
-  const settleStart = () => {
-    startPending = false;
-    while (startSettlers.length) startSettlers.shift()!();
-  };
-  htmlElement.addEventListener('playing', settleStart);
+  const ownSrc = () => blobUrl || initialSrc;
 
   const preloadBlob = () => {
     if (blobUrl) return Promise.resolve(blobUrl);
@@ -145,7 +134,7 @@ export function audioInstance(htmlElement: HTMLAudioElement): SoundInstance {
   const startPlayback = (gen: number) => {
     if (gen !== playGeneration || !isPlaying) return;
     htmlElement.volume = 1;
-    htmlElement.src = blobUrl || initialSrc;
+    htmlElement.src = ownSrc();
     htmlElement.currentTime = 0;
     htmlElement.play().catch((error) => {
       if (gen !== playGeneration) return;
@@ -154,18 +143,48 @@ export function audioInstance(htmlElement: HTMLAudioElement): SoundInstance {
     });
   };
 
+  const doStop = () => {
+    playGeneration++;
+    htmlElement.pause();
+    htmlElement.src = '';
+    isPlaying = false;
+    carriedSrc = null;
+  };
+
+  // Re-assert playback on an element that should be audible but sits paused
+  // (a denied play() or an OS pause). No src attribute means the initial
+  // play() is still waiting for the blob — poking play() would reject on the
+  // empty source and cancel that pending start; leave it alone.
+  const reassertPlayback = () => {
+    if (!htmlElement.paused || !htmlElement.getAttribute('src')) return;
+    const gen = playGeneration;
+    htmlElement.play().catch((error) => {
+      if (gen !== playGeneration) return;
+      if (!isAbortError(error)) isPlaying = false; // retried next supervisor tick
+    });
+  };
+
   const play = () => {
-    // Fresh play intent: cancel a queued deferred stop for this instance
-    // (error → loading → error flapping while the partner never started)
-    // and reclaim the element if it was carrying the partner's sound.
-    deferredStopGeneration++;
-    carryAttempted = false;
-    if (carriedSrc) {
+    // The one rule: never start a second element while one is audible —
+    // swap the tone onto the element that already plays.
+    if (partner?.isAudiblyPlaying()) {
+      if (isPlaying) doStop(); // clean up a dead attempt of our own
+      partner.carrySound(ownSrc());
+      return;
+    }
+    if (isPlaying && carriedSrc) {
+      // Our element is live but sounding the partner's tone — take it back.
       carriedSrc = null;
-      isPlaying = false;
+      htmlElement.src = ownSrc();
+      htmlElement.currentTime = 0;
+      const gen = playGeneration;
+      htmlElement.play().catch((error) => {
+        if (gen !== playGeneration) return;
+        if (!isAbortError(error)) isPlaying = false;
+      });
+      return;
     }
     if (!isPlaying) {
-      startPending = true;
       const gen = ++playGeneration;
       isPlaying = true;
       if (blobUrl) {
@@ -176,73 +195,36 @@ export function audioInstance(htmlElement: HTMLAudioElement): SoundInstance {
     }
   };
 
-  const doStop = () => {
-    playGeneration++;
-    htmlElement.pause();
-    htmlElement.src = '';
-    isPlaying = false;
-    carriedSrc = null;
-    carryAttempted = false;
-  };
-
   return {
     play,
     stop() {
-      // This sound will never start now — settle it, which also releases a
-      // partner waiting on us (so a user stop silences BOTH immediately).
-      startPending = false;
-      settleStart();
-
-      // Deferred stop: while the replacement sound hasn't produced audio yet,
-      // keep this one playing (see protocol rule 1 — the silent gap is where
-      // iOS denies the replacement's start).
-      if (partner?.isStartPending()) {
-        const gen = ++deferredStopGeneration;
-        partner.onStartSettled(() => {
-          if (gen === deferredStopGeneration) doStop();
-        });
-        return;
-      }
-      doStop();
+      // My tone may be living on the partner element (carry) — stop it there.
+      if (partner?.isCarrying()) partner.stopCarried();
+      // Stop my own element unless it is busy sounding the partner's tone
+      // (then the partner's stop() is the one that releases it).
+      if (isPlaying && !carriedSrc) doStop();
     },
     ensure() {
+      // My tone lives on the partner element — keep THAT one honest.
+      if (partner?.isCarrying()) {
+        partner.reassert();
+        return;
+      }
       if (!isPlaying) {
         play();
-      } else if (htmlElement.paused && htmlElement.getAttribute('src')) {
-        // (No src attribute means play() is still waiting for the blob —
-        // poking play() would reject on the empty source and cancel the
-        // pending start; leave that one alone.)
-        const gen = playGeneration;
-        htmlElement.play().catch((error) => {
-          if (gen !== playGeneration) return;
-          if (!isAbortError(error)) isPlaying = false; // retried next tick
-        });
+        return;
       }
-
-      // Escalation: our start keeps being denied but the partner element is
-      // audible — have IT carry our sound (protocol rule 2).
-      if (startPending && htmlElement.paused && !carryAttempted && partner?.isAudiblyPlaying()) {
-        carryAttempted = true;
-        partner.carrySound(blobUrl || initialSrc);
-      }
+      reassertPlayback();
     },
     // Called from every playback-starting user gesture (play/prev/next/
-    // station select). Two jobs:
-    // 1. Gesture reconcile (protocol rule 3): if this sound SHOULD be
-    //    audible but its element sits silent after a denied start, restart
-    //    it INSIDE the gesture call stack — the one context iOS honors.
-    //    The intent flag alone used to squander the gesture (plan.md R4b).
-    // 2. Otherwise the classic warm-up: a split-second play/pause so iOS
-    //    blesses the element for later programmatic starts.
+    // station select). If this element should be audible but sits silent
+    // after a denied start, restart it INSIDE the gesture call stack — the
+    // one context iOS always honors (the intent flag alone used to squander
+    // the gesture). Otherwise the classic warm-up: a split-second play/pause
+    // so iOS blesses the element for later programmatic starts.
     warmUp() {
       if (isPlaying) {
-        if (htmlElement.paused && htmlElement.getAttribute('src')) {
-          const gen = playGeneration;
-          htmlElement.play().catch((error) => {
-            if (gen !== playGeneration) return;
-            if (!isAbortError(error)) isPlaying = false; // supervisor retries
-          });
-        }
+        reassertPlayback();
         return;
       }
       if (!blobUrl) {
@@ -260,17 +242,16 @@ export function audioInstance(htmlElement: HTMLAudioElement): SoundInstance {
       }).catch(() => {});
     },
     preloadBlob,
-    isStartPending: () => startPending,
-    onStartSettled(callback: () => void) {
-      startSettlers.push(callback);
-    },
     setPartner(p: SoundInstance) {
       partner = p;
     },
     isAudiblyPlaying: () => isPlaying && !htmlElement.paused,
+    isCarrying: () => carriedSrc !== null,
+    stopCarried: doStop,
+    reassert: reassertPlayback,
     carrySound(src: string) {
       if (!isPlaying || htmlElement.paused) return; // nothing audible to lend
-      if (carriedSrc === src) return;               // already carrying it
+      if ((carriedSrc ?? ownSrc()) === src) return; // already sounding this tone
       carriedSrc = src;
       htmlElement.src = src;
       htmlElement.currentTime = 0;
@@ -278,7 +259,7 @@ export function audioInstance(htmlElement: HTMLAudioElement): SoundInstance {
         // Even the continuation was denied — restore our own sound rather
         // than trade something audible for silence.
         carriedSrc = null;
-        htmlElement.src = blobUrl || initialSrc;
+        htmlElement.src = ownSrc();
         htmlElement.currentTime = 0;
         htmlElement.play().catch(() => {});
       });

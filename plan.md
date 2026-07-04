@@ -357,8 +357,18 @@ Criterii de acceptare R4b (pe iPhone, toate cu wifi off la momentul potrivit):
 3. stop + play continua sa mearga ca azi.
 4. Fluxul normal (eroare auzita cu app deschisa, apoi lock) ramane intact.
 
-Rezultat device-test (Adrian, 2026-07-04, PR #49): sunetul de eroare pe
-lock screen MERGE. Observatie noua: IMAGINEA de eroare nu apare pe lock
+DECIZIA FINALA (Adrian, 2026-07-04): "folosim doar 2" — tone-swap e UNICUL
+mecanism, nu fallback. Un singur element de feedback viu la un moment dat;
+schimbarea de ton (loading <-> eroare, dus si intors) = swap de src pe
+elementul care deja canta. Pornire proaspata DOAR din liniste (foreground/
+gest). Deferred stop, settlers, carry-once — sterse; raman: revert la ton
+propriu daca swap-ul e refuzat (never trade audible for silent) si
+reconcile-on-gesture. Unit testele reduse la 7 scenarii-esenta; e2e-urile
+alb-box scoase — instrumentul de acceptare pentru zona iOS e checklist-ul
+de device de mai sus (de re-rulat dupa simplificare!).
+
+Rezultat device-test (Adrian, 2026-07-04, PR #49, varianta pre-simplificare):
+sunetul de eroare pe lock screen MERGE. Observatie noua: IMAGINEA de eroare nu apare pe lock
 screen offline — sistemul isi descarca singur artwork-ul (fetch in afara
 paginii, ocoleste SW-ul si cache-ul), deci offline ramane fara imagine.
 Aceeasi radacina ca widget-ul macOS gol (limitare documentata, 3 fix-uri

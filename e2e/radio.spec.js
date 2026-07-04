@@ -856,10 +856,15 @@ test.describe('Offline mid-playback — always audible', () => {
     await page.locator('#player').evaluate((el) => el.pause());
 
     // NOT the paused UI: the app announces the problem (audible retry runs
-    // first, then the offline retry lands in error) instead of going mute
+    // first, then the offline retry lands in error) instead of going mute.
+    // Tone-swap design (R4b): the error tone sounds through whichever
+    // feedback element is live — mid-playback that is the loading element
+    // carrying the error tone, so assert "a feedback sound is on", not an id.
     await expect(c.errorMsg).toBeVisible({ timeout: 10000 });
     await expect(c.playButton).toBeHidden();
-    await expectSoundPlaying(page, 'errorNoise');
+    await page.waitForFunction(() =>
+      ['loadingNoise', 'errorNoise'].some((id) => !document.getElementById(id).paused),
+      { timeout: 3000 });
 
     // The network comes back — the radio recovers with no click
     connectionDown = false;
@@ -885,123 +890,5 @@ test.describe('Offline mid-playback — always audible', () => {
     await expect(c.playButton).toBeVisible();
     await expect(c.errorMsg).toBeHidden();
     await expect(c.loadingMsg).toBeHidden();
-  });
-});
-
-// Deliberate white-box exception (same rationale as the cache-versioning
-// describe): the iOS behavior this guards — backgrounded Safari denying any
-// FRESH play() start while allowing an already-playing element to swap its
-// source and continue — cannot be reproduced in headless Chromium. We
-// simulate the denial by patching the elements' play() to reject the way
-// iOS does, then assert the user-audible outcome.
-test.describe('iOS-like playback denial — sound carry', () => {
-
-  test('when the error sound cannot start, the loading element carries it', async ({ page }) => {
-    test.setTimeout(60_000);
-    const c = ui(page);
-
-    let connectionDown = false;
-    await page.route(STREAM_URL_RE, async (route) => {
-      if (connectionDown) {
-        await route.abort('internetdisconnected');
-        return;
-      }
-      await route.fulfill({ status: 200, contentType: 'audio/mpeg', path: 'src/public/sounds/test-tone.mp3' });
-    });
-
-    await page.goto('/');
-    await waitForSoundBlobs(page);
-    await c.playButton.click();
-    await expect(c.pauseButton).toBeVisible({ timeout: 8000 });
-
-    // From here on, the error element behaves like backgrounded iOS: every
-    // fresh start is denied.
-    await page.evaluate(() => {
-      const el = document.getElementById('errorNoise');
-      el.play = () => Promise.reject(new DOMException('denied', 'NotAllowedError'));
-    });
-
-    connectionDown = true;
-    await page.context().setOffline(true);
-
-    // The loading sound starts (retrying); remember its own source.
-    await expectSoundPlaying(page, 'loadingNoise');
-    const loadingOwnSrc = await page.evaluate(() => document.getElementById('loadingNoise').src);
-
-    await expect(c.errorMsg).toBeVisible({ timeout: 15000 });
-
-    // The user must NOT end up in silence: the loading element keeps playing
-    // and, once the supervisor notices the denied start, carries the error
-    // tone (its source switches away from its own sound).
-    await page.waitForFunction((ownSrc) => {
-      const carrier = document.getElementById('loadingNoise');
-      return !carrier.paused && Boolean(carrier.src) && carrier.src !== ownSrc;
-    }, loadingOwnSrc, { timeout: 10000 });
-
-    // …while the denied element itself never started.
-    const errorPaused = await page.evaluate(() => document.getElementById('errorNoise').paused);
-    expect(errorPaused).toBe(true);
-
-    // The network returns: the radio recovers and every feedback sound stops,
-    // including the carrying element.
-    connectionDown = false;
-    await page.context().setOffline(false);
-    await expect(c.pauseButton).toBeVisible({ timeout: 45000 });
-    await page.waitForFunction(() =>
-      document.getElementById('loadingNoise').paused &&
-      document.getElementById('errorNoise').paused,
-      { timeout: 5000 });
-  });
-
-  test('a user gesture revives the sound after total denial (unlock + next)', async ({ page }) => {
-    test.setTimeout(60_000);
-    const c = ui(page);
-
-    let connectionDown = false;
-    await page.route(STREAM_URL_RE, async (route) => {
-      if (connectionDown) {
-        await route.abort('internetdisconnected');
-        return;
-      }
-      await route.fulfill({ status: 200, contentType: 'audio/mpeg', path: 'src/public/sounds/test-tone.mp3' });
-    });
-
-    await page.goto('/');
-    await waitForSoundBlobs(page);
-    await c.playButton.click();
-    await expect(c.pauseButton).toBeVisible({ timeout: 8000 });
-
-    // Locked iPhone with a dead audio session: EVERY fresh start on BOTH
-    // feedback elements is denied — no carry partner is audible, so the
-    // historic all-silent error state arises.
-    await page.evaluate(() => {
-      for (const id of ['loadingNoise', 'errorNoise']) {
-        const el = document.getElementById(id);
-        el._origPlay = el.play;
-        el.play = () => Promise.reject(new DOMException('denied', 'NotAllowedError'));
-      }
-    });
-
-    connectionDown = true;
-    await page.context().setOffline(true);
-
-    await expect(c.errorMsg).toBeVisible({ timeout: 20000 });
-    const bothSilent = await page.evaluate(() =>
-      document.getElementById('loadingNoise').paused &&
-      document.getElementById('errorNoise').paused);
-    expect(bothSilent).toBe(true);
-
-    // The user unlocks the phone (play works again in a gesture context)
-    // and taps next. That single gesture must bring the sound back —
-    // the intent flag must not squander it.
-    await page.evaluate(() => {
-      for (const id of ['loadingNoise', 'errorNoise']) {
-        const el = document.getElementById(id);
-        el.play = el._origPlay;
-      }
-    });
-    await c.nextButton.click();
-
-    await expectSoundPlaying(page, 'errorNoise');
   });
 });
