@@ -3,7 +3,7 @@
  * through the feature modules. No business logic lives here, only wiring.
  */
 
-import { createRadioCore } from './radioCore';
+import { createRadioCore, isLoadingLike } from './radioCore';
 import {
   radioSelect, player, loadingNoise, errorNoise, loadingMsg, errorMsg,
   prevButton, playButton, pauseButton, stopButton, nextButton, logoButton,
@@ -179,8 +179,11 @@ player.addEventListener('pause', () => {
   // During loading/retrying/recovering the main player pauses while the loading
   // sound takes over.  Actively re-assert 'playing' so macOS doesn't flash
   // "Not Playing" in the gap.  Only signal 'paused' in normal playback states.
+  // NOTE: deliberately narrower than isFeedbackAudible — 'error' is not
+  // re-asserted here (pre-existing drift from the other three state lists;
+  // whether that's intent or a bug gets decided in faza R3/R5, not silently).
   if ('mediaSession' in navigator) {
-    if (s === 'loading' || s === 'retrying' || s === 'recovering') {
+    if (isLoadingLike(s) || s === 'recovering') {
       navigator.mediaSession.playbackState = 'playing';
     } else if (s === 'playing') {
       navigator.mediaSession.playbackState = 'paused';
