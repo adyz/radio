@@ -293,8 +293,15 @@ Implementat conform planului de mai jos. Note:
 Ramane separat (vezi sectiunea de mai jos "Redesign audioInstance") — cere
 re-validare pe device (lock screen, prev/next, offline).
 
-Repro observat pe iPhone (Adrian, 2026-07-04) — cazul exact pe care canalul
-de ton il rezolva prin constructie:
+CERINTA EXPLICITA (Adrian, 2026-07-04): sunetul de eroare TREBUIE sa se auda
+pe lock screen DIN PRIMA — nu doar dupa ce aplicatia a trecut o data prin
+eroare cu ecranul deschis. Repro-ul de mai jos e deci un BUG de cerinta, nu
+o limitare acceptata. PR #41 a demonstrat pe iPhone ca e realizabil (carry);
+4b il reconstruieste curat si devine URMATOAREA FAZA dupa R4 (inaintea
+R5/R6 — vezi ordinea actualizata in planul de refactor).
+
+Repro observat pe iPhone (Adrian, 2026-07-04) — cazul exact pe care
+mecanismul handoff/carry il rezolva:
 - Flux OK: play din app, folosire normala, lock -> wifi off -> loading sound
   + imagine loading -> apoi eroare cu sunet -> wifi on -> revine singur.
 - Caveat: play din app si LOCK IMEDIAT -> wifi off -> loading-ul se aude,
@@ -445,10 +452,11 @@ Sursa: review multi-agent pe intervalul `3e36147..HEAD` (ultimele 2 zile) —
 
 ## Ce NU facem in acest plan
 
-- Faza 4b (reconcile() in audioInstance + handoff/carry condus din masina —
-  vezi CORECTIA DE DIRECTIE din sectiunea 4b) ramane separata — cere
-  re-validare completa pe device. Aici facem doar fix-ul minim al race-ului
-  ensure() (R4), compatibil cu redesignul viitor.
+- (Actualizat 2026-07-04) Faza 4b NU mai e amanata: cerinta explicita a lui
+  Adrian — sunetul de eroare audibil pe lock screen DIN PRIMA — o face
+  obligatorie. Intra in ordine imediat dupa R4, ca faza R4b (handoff/carry
+  condus din masina, vezi CORECTIA DE DIRECTIE din sectiunea 4b). Cere
+  re-validare completa pe device inainte de merge.
 - NU consolidam cele 3 hook-uri de re-asertare din mediaSession.ts
   (play/playing, timeupdate, pause) — empirism iOS/macOS calit pe device
   (d798cc9, 2933d78, 5106a92). Le atingem doar prin predicate partajate (R2),
@@ -588,9 +596,12 @@ statiilor raman disponibile offline dupa prima redare).
 
 ## Ordine si estimare
 
-R1 → R2 → R3 → R4 → R5 → R6. R1-R2 sunt mecanice (o sesiune). R3 e miezul
-(masina + adaptor + mediaSession, cu device smoke). R4 marunt. R5 cere
-atentie la empirismul iOS. R6 independent (poate fi facut oricand dupa R1).
+R1 → R2 → R3 → R4 → R4b → R5 → R6. R1-R2 sunt mecanice (o sesiune). R3 e
+miezul (masina + adaptor + mediaSession, cu device smoke). R4 marunt.
+R4b (handoff/carry din masina) e cerinta lock-screen a lui Adrian — cea mai
+empirica faza, cu re-validare completa pe iPhone (play→lock imediat→wifi
+off→eroarea se aude DIN PRIMA). R5 cere atentie la empirismul iOS. R6
+independent (poate fi facut oricand dupa R1).
 
 ## Definition of done
 
