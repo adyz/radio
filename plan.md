@@ -357,6 +357,15 @@ Criterii de acceptare R4b (pe iPhone, toate cu wifi off la momentul potrivit):
 3. stop + play continua sa mearga ca azi.
 4. Fluxul normal (eroare auzita cu app deschisa, apoi lock) ramane intact.
 
+Rezultat device-test (Adrian, 2026-07-04, PR #49): sunetul de eroare pe
+lock screen MERGE. Observatie noua: IMAGINEA de eroare nu apare pe lock
+screen offline — sistemul isi descarca singur artwork-ul (fetch in afara
+paginii, ocoleste SW-ul si cache-ul), deci offline ramane fara imagine.
+Aceeasi radacina ca widget-ul macOS gol (limitare documentata, 3 fix-uri
+revertate in PR #41). Acceptat ca OK deocamdata. Idee neincercata, separat:
+cand navigator.onLine e false, artwork ca data: URI (imagine embedata,
+zero retea) — de verificat daca iOS o accepta in MediaMetadata.
+
 ### Planul initial (referinta)
 
 - Instalam `xstate` (fara `@xstate/react`).
