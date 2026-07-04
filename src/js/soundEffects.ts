@@ -255,8 +255,14 @@ export function audioInstance(htmlElement: HTMLAudioElement): SoundInstance {
       carriedSrc = src;
       htmlElement.src = src;
       htmlElement.currentTime = 0;
-      htmlElement.play().catch(() => {
-        // Even the continuation was denied — restore our own sound rather
+      const gen = playGeneration;
+      htmlElement.play().catch((error) => {
+        // The swap failed — but if we were stopped or reclaimed meanwhile
+        // (generation moved on), or our own stop interrupted it (AbortError),
+        // stay silent: restarting here would resurrect a zombie tone UNDER
+        // the live stream (device-observed: loading tone + radio at once).
+        if (gen !== playGeneration || isAbortError(error)) return;
+        // Denied outright while still wanted — restore our own sound rather
         // than trade something audible for silence.
         carriedSrc = null;
         htmlElement.src = ownSrc();

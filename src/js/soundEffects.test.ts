@@ -127,6 +127,33 @@ describe('feedback sounds — the tone-swap rule', () => {
     expect(errEl.playCalls).toBe(0);
   });
 
+  it('a stop during a pending tone swap must not resurrect the sound', async () => {
+    // Device-observed zombie: the swap's play() settles LATE (iOS latency),
+    // the stream recovers meanwhile and applyFx('playing') stops the tones —
+    // then the late rejection used to revert-and-restart the element, playing
+    // the loading tone UNDER the live radio, unstoppable (isPlaying already
+    // false, so later stops skipped it).
+    const { loadEl, loading, error } = await makePair();
+
+    loading.play();
+    let rejectSwap!: (e: unknown) => void;
+    loadEl.playResult = new Promise((_, reject) => { rejectSwap = reject; });
+    error.play();            // tone swap onto the live element is in flight
+    loading.stop();
+
+    // The stream recovers: applyFx('playing') stops both tones.
+    loading.stop();
+    error.stop();
+    expect(loadEl.paused).toBe(true);
+
+    // The swap's rejection lands only now.
+    rejectSwap(Object.assign(new Error('denied'), { name: 'NotAllowedError' }));
+    await flushPromises();
+
+    expect(loadEl.paused).toBe(true);           // stays dead
+    expect(loadEl.getAttribute('src')).toBe(''); // no revert, no restart
+  });
+
   it('a user stop silences everything, including a carrying element', async () => {
     const { loadEl, errEl, loading, error } = await makePair();
 
