@@ -223,6 +223,12 @@ export function audioInstance(htmlElement: HTMLAudioElement): SoundInstance {
     // the gesture). Otherwise the classic warm-up: a split-second play/pause
     // so iOS blesses the element for later programmatic starts.
     warmUp() {
+      // My tone lives on the partner element (carry) — the gesture should
+      // steady THAT element, not start a second one under it.
+      if (partner?.isCarrying()) {
+        partner.reassert();
+        return;
+      }
       if (isPlaying) {
         reassertPlayback();
         return;

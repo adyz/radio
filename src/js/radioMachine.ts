@@ -328,21 +328,23 @@ export function createRadioMachine(deps: RadioDeps) {
 
     on: {
       // Handled identically in every state (child states may override).
+      // consumeUserPauseIntent: PLAY/STOP abandon any pending pause, so a
+      // stale intent must not explain away the next unexpected offline pause.
       PLAY: [
         {
           guard: 'isOnline',
           target: '.loading',
-          actions: ['setStation', 'syncSelectedIndex', 'resetAttemptCounters', 'clearPauseTime'],
+          actions: ['setStation', 'syncSelectedIndex', 'resetAttemptCounters', 'clearPauseTime', 'consumeUserPauseIntent'],
         },
         {
           // No point trying if offline — go straight to error and recover later
           target: '.error',
-          actions: ['setStation', 'syncSelectedIndex', 'resetAttemptCounters', 'clearPauseTime', 'stopPlayer', 'beginErrorCycle'],
+          actions: ['setStation', 'syncSelectedIndex', 'resetAttemptCounters', 'clearPauseTime', 'consumeUserPauseIntent', 'stopPlayer', 'beginErrorCycle'],
         },
       ],
       STOP: {
         target: '.idle',
-        actions: ['resetRetryCount', 'resetRecoveryCount', 'clearPauseTime', 'stopPlayer'],
+        actions: ['resetRetryCount', 'resetRecoveryCount', 'clearPauseTime', 'consumeUserPauseIntent', 'stopPlayer'],
       },
       // A user-intent pause: mark it so the native 'pause' event it triggers
       // isn't mistaken for a dying stream. The feedback states override this
@@ -406,7 +408,10 @@ export function createRadioMachine(deps: RadioDeps) {
             {
               guard: 'unexpectedOfflinePause',
               target: 'retrying',
-              actions: ['consumeUserPauseIntent', 'clearPauseTime', 'incrementRetryCount'],
+              // stopPlayer: detach the dead stream like STALLED/PLAYER_ERROR
+              // do — otherwise the old src stays attached through RETRY_DELAY
+              // and a refilled buffer could sound under the loading tone.
+              actions: ['consumeUserPauseIntent', 'clearPauseTime', 'stopPlayer', 'incrementRetryCount'],
               // retryCount is always 0 while playing (reset on success), so
               // the retry branch is the only reachable one — kept simple.
             },
@@ -448,7 +453,10 @@ export function createRadioMachine(deps: RadioDeps) {
           ],
           RESUME: [...restartAfterLongPause, { target: '.resuming' }],
           TOGGLE: [...restartAfterLongPause, { target: '.resuming' }],
-          PLAYER_ERROR: streamFailure('clearPauseTime'),
+          // PLAYER_ERROR is deliberately NOT handled here: a deliberate pause
+          // stays silent even if the still-attached stream errors later. A
+          // resume on the broken src fails back into paused; a long-pause
+          // resume restarts the station from scratch anyway.
         },
       },
 

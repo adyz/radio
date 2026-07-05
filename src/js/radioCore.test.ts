@@ -397,19 +397,10 @@ describe('native player errors', () => {
     expect(core.getState()).toBe('retrying');
   });
 
-  it('retries when the stream errors while paused', async () => {
-    const { deps } = makeDeps();
-    const { core, clock } = createCore(deps);
-
-    core.playRadio(0);
-    await flushPromises();
-    core.onPlayerPause();
-    expect(core.getState()).toBe('paused');
-
-    core.onPlayerError();
-
-    expect(core.getState()).toBe('retrying');
-  });
+  // NOTE: errors while paused deliberately do NOT retry — the product rule
+  // "a deliberate pause stays silent" wins (see 'a stream error while
+  // deliberately paused stays paused and silent' below). The pre-R3 behavior
+  // (retry from paused) predated user-intent tracking.
 });
 
 // =============================================
@@ -1411,6 +1402,62 @@ describe('system pause vs user pause', () => {
     core.onPlayerPause();    // no user intent, but the network is fine
 
     expect(core.getState()).toBe('paused');
+  });
+
+  it('the unexpected offline pause detaches the dead stream before retrying', async () => {
+    let online = true;
+    const { deps, calls } = makeDeps({ isOnline: () => online });
+    const { core, clock } = createCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+
+    online = false;
+    const pausesBefore = calls.playerPause.length;
+    core.onPlayerPause();    // OS killed the dead stream
+
+    expect(core.getState()).toBe('retrying');
+    // Same detach as STALLED/PLAYER_ERROR — a refilled buffer must not be
+    // able to sound under the loading tone during RETRY_DELAY.
+    expect(calls.playerPause.length).toBeGreaterThan(pausesBefore);
+    expect(calls.playerSetSrc.at(-1)).toBe('');
+  });
+
+  it('a stream error while deliberately paused stays paused and silent', async () => {
+    const { deps, calls } = makeDeps();
+    const { core, clock } = createCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+    core.pauseRadio();
+    core.onPlayerPause();
+    expect(core.getState()).toBe('paused');
+
+    core.onPlayerError();    // the still-attached stream errors later
+
+    expect(core.getState()).toBe('paused');
+    expect(calls.loadingSound.at(-1)).toBe('stop');
+    expect(calls.errorSound.at(-1)).toBe('stop');
+  });
+
+  it('a stale pause intent does not survive a new PLAY', async () => {
+    let online = true;
+    const { deps } = makeDeps({ isOnline: () => online });
+    const { core, clock } = createCore(deps);
+
+    core.playRadio(0);
+    await flushPromises();
+
+    core.pauseRadio();       // intent marked, but no native pause consumed it
+    core.playRadio(1);       // user starts another station right away
+    await flushPromises();
+    expect(core.getState()).toBe('playing');
+
+    // Offline pause lands within USER_PAUSE_INTENT_MS of that stale intent:
+    // it must be treated as a dying stream (audible retry), not a user pause.
+    online = false;
+    core.onPlayerPause();
+    expect(core.getState()).toBe('retrying');
   });
 
   it('user pause intent expires after USER_PAUSE_INTENT_MS', async () => {

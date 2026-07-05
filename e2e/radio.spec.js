@@ -892,3 +892,182 @@ test.describe('Offline mid-playback — always audible', () => {
     await expect(c.loadingMsg).toBeHidden();
   });
 });
+
+// BUG HUNT (Adrian, device): sometimes the loading tone keeps playing UNDER
+// the live radio. The invariant: once the stream is what's playing, every
+// feedback tone must be silent — and STAY silent (the zombie resurrects
+// after things look settled, so we hold and watch).
+test.describe('Only the radio — no tone may survive under the stream', () => {
+
+  async function routeStreams(page) {
+    const net = { down: false, delayMs: 0 };
+    await page.route(STREAM_URL_RE, async (route) => {
+      if (net.down) { await route.abort('internetdisconnected'); return; }
+      if (net.delayMs) await new Promise(r => setTimeout(r, net.delayMs));
+      await route.fulfill({ status: 200, contentType: 'audio/mpeg', path: 'src/public/sounds/test-tone.mp3' });
+    });
+    return net;
+  }
+
+  async function expectOnlyStreamAudible(page, holdMs = 3000) {
+    // Grace: the gapless handoff may take a moment to release the tone.
+    await page.waitForFunction(() =>
+      !document.getElementById('player').paused &&
+      document.getElementById('loadingNoise').paused &&
+      document.getElementById('errorNoise').paused,
+      { timeout: 8000 });
+    // Hold: a zombie shows up AFTER everything looks settled.
+    const verdict = await page.evaluate(async (ms) => {
+      const start = Date.now();
+      while (Date.now() - start < ms) {
+        for (const id of ['loadingNoise', 'errorNoise']) {
+          const el = document.getElementById(id);
+          if (!el.paused) return `${id} became audible ${Date.now() - start}ms after the stream settled (src=${el.src})`;
+        }
+        await new Promise(r => setTimeout(r, 50));
+      }
+      return 'clean';
+    }, holdMs);
+    expect(verdict).toBe('clean');
+  }
+
+  test("Adrian's script: offline chaos, then online next-next-next — only the radio at the end", async ({ page }) => {
+    test.setTimeout(120_000);
+    const c = ui(page);
+    const net = await routeStreams(page);
+
+    await page.goto('/');
+    await waitForSoundBlobs(page);
+
+    await c.playButton.click();
+    await expect(c.pauseButton).toBeVisible({ timeout: 8000 });
+
+    // Network dies mid-playback.
+    net.down = true;
+    await page.context().setOffline(true);
+    await expect(c.errorMsg).toBeVisible({ timeout: 15000 });
+
+    // Station-hop while offline: error tone swaps around.
+    await c.nextButton.click();
+    await page.waitForTimeout(400);
+    await c.prevButton.click();
+    await page.waitForTimeout(400);
+    await c.nextButton.click();
+    await page.waitForTimeout(400);
+    await c.nextButton.click();
+    await page.waitForTimeout(600);
+
+    // Network returns; connects are slow enough that the loading tone is
+    // audible between stations.
+    net.down = false;
+    net.delayMs = 900;
+    await page.context().setOffline(false);
+
+    for (let i = 0; i < 4; i++) {
+      await c.nextButton.click();
+      await page.waitForTimeout(500); // mid-loading: tone up, then hop again
+    }
+
+    // Let the last station connect.
+    await expect(c.pauseButton).toBeVisible({ timeout: 20000 });
+    await expectOnlyStreamAudible(page);
+  });
+
+  test('same script, with iOS-like slow-settling play() promises on the tones', async ({ page }) => {
+    test.setTimeout(120_000);
+    const c = ui(page);
+    const net = await routeStreams(page);
+
+    await page.goto('/');
+    await waitForSoundBlobs(page);
+
+    // iOS reality: the play() CALL lands now, but its promise settles late.
+    await page.evaluate(() => {
+      for (const id of ['loadingNoise', 'errorNoise']) {
+        const el = document.getElementById(id);
+        const orig = el.play.bind(el);
+        el.play = () => new Promise((resolve, reject) => {
+          orig().then(
+            (v) => setTimeout(() => resolve(v), 450),
+            (e) => setTimeout(() => reject(e), 450),
+          );
+        });
+      }
+    });
+
+    await c.playButton.click();
+    await expect(c.pauseButton).toBeVisible({ timeout: 8000 });
+
+    net.down = true;
+    await page.context().setOffline(true);
+    await expect(c.errorMsg).toBeVisible({ timeout: 15000 });
+
+    await c.nextButton.click();
+    await page.waitForTimeout(300);
+    await c.prevButton.click();
+    await page.waitForTimeout(300);
+    await c.nextButton.click();
+    await page.waitForTimeout(300);
+    await c.nextButton.click();
+    await page.waitForTimeout(500);
+
+    net.down = false;
+    net.delayMs = 700;
+    await page.context().setOffline(false);
+
+    for (let i = 0; i < 4; i++) {
+      await c.nextButton.click();
+      await page.waitForTimeout(350);
+    }
+
+    await expect(c.pauseButton).toBeVisible({ timeout: 20000 });
+    await expectOnlyStreamAudible(page);
+  });
+
+  test('a tone swap denied late (locked iOS) while the network recovers — the tone must stay dead', async ({ page }) => {
+    test.setTimeout(60_000);
+    const c = ui(page);
+    const net = await routeStreams(page);
+
+    await page.goto('/');
+    await waitForSoundBlobs(page);
+
+    await c.playButton.click();
+    await expect(c.pauseButton).toBeVisible({ timeout: 8000 });
+
+    // The stream dies; like on a phone, the OS pauses the dead element.
+    net.down = true;
+    await page.context().setOffline(true);
+    await page.locator('#player').evaluate((el) => el.pause());
+
+    // Retrying: the loading tone comes up (audible carrier-to-be).
+    await expectSoundPlaying(page, 'loadingNoise');
+
+    // Locked-iOS moment, exactly once: the NEXT play() on the loading
+    // element (the upcoming error-tone swap) is denied — but the denial
+    // settles late, like iOS does. Later calls behave normally again.
+    await page.evaluate(() => {
+      const el = document.getElementById('loadingNoise');
+      const orig = el.play.bind(el);
+      el.play = () => {
+        el.play = orig; // one-shot
+        window.__swapDenied = true;
+        return new Promise((_, reject) =>
+          setTimeout(() => reject(new DOMException('denied', 'NotAllowedError')), 600));
+      };
+    });
+
+    // The instant the swap fires (its denial now pending), the network
+    // returns: the radio recovers while the rejection is still in flight,
+    // so the rejection lands AFTER the playing-state cleanup ran.
+    await page.waitForFunction(() => window.__swapDenied === true, { timeout: 10000 });
+    net.down = false;
+    await page.context().setOffline(false);
+    await expect(c.pauseButton).toBeVisible({ timeout: 20000 });
+
+    // The late rejection lands after the stream settled. The bug: the
+    // never-trade-audible-for-silent revert restarted the loading tone
+    // UNDER the live radio — unstoppable. It must stay dead.
+    await expectOnlyStreamAudible(page);
+  });
+});
