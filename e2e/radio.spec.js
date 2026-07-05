@@ -1096,4 +1096,39 @@ test.describe('Only the radio — no tone may survive under the stream', () => {
     // It must be silenced the moment it becomes audible — and stay silent.
     await expectOnlyStreamAudible(page);
   });
+
+  test("Adrian's repro #2: offline next+prev, then online back-and-forward flapping", async ({ page }) => {
+    test.setTimeout(120_000);
+    const c = ui(page);
+    const net = await routeStreams(page);
+
+    await page.goto('/');
+    await waitForSoundBlobs(page);
+    await c.playButton.click();
+    await expect(c.pauseButton).toBeVisible({ timeout: 8000 });
+
+    // Offline mid-playback, then hop around while the error tone swaps.
+    net.down = true;
+    await page.context().setOffline(true);
+    await expect(c.errorMsg).toBeVisible({ timeout: 15000 });
+    await c.nextButton.click();
+    await page.waitForTimeout(350);
+    await c.prevButton.click();
+    await page.waitForTimeout(500);
+
+    // Back online with slow connects, then rapid back-and-FORWARD flapping
+    // between the same stations (each click lands mid-loading of the other).
+    net.down = false;
+    net.delayMs = 800;
+    await page.context().setOffline(false);
+    for (let i = 0; i < 3; i++) {
+      await c.nextButton.click();
+      await page.waitForTimeout(300);
+      await c.prevButton.click();
+      await page.waitForTimeout(300);
+    }
+
+    await expect(c.pauseButton).toBeVisible({ timeout: 20000 });
+    await expectOnlyStreamAudible(page);
+  });
 });

@@ -146,13 +146,18 @@ focusInitialPlaybackControl();
 // disobey (a play() settling after stop() once resurrected a tone under the
 // live radio — unstoppable, since the bookkeeping already said "stopped").
 // Enforce the invariant at the element boundary instead of per code path:
-// in states where no feedback tone may sound, anything that becomes audible
-// is silenced the moment the browser reports it. In the tone states this
-// does nothing — there the tone-swap/carry behavior is legitimate.
+// in states where no feedback tone may sound, anything audible is silenced.
+// 'playing' catches fresh (re)starts the moment they become audible;
+// 'timeupdate' fires continuously during playback (~4x/s), so it also
+// catches a tone that never obeyed its stop and just kept going — no
+// resurrection path, known or unknown, survives more than ~250ms. In the
+// tone states this does nothing — swap/carry behavior is legitimate there.
 for (const toneElement of [loadingNoise, errorNoise]) {
-  toneElement.addEventListener('playing', () => {
+  const silenceIfForbidden = () => {
     if (!isFeedbackAudible(core.getState())) toneElement.pause();
-  });
+  };
+  toneElement.addEventListener('playing', silenceIfForbidden);
+  toneElement.addEventListener('timeupdate', silenceIfForbidden);
 }
 
 // --- Event listeners ---
