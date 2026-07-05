@@ -3,7 +3,7 @@
  * through the feature modules. No business logic lives here, only wiring.
  */
 
-import { createRadioCore, isLoadingLike } from './radioCore';
+import { createRadioCore, isLoadingLike, isFeedbackAudible } from './radioCore';
 import {
   radioSelect, player, loadingNoise, errorNoise, loadingMsg, errorMsg,
   prevButton, playButton, pauseButton, stopButton, nextButton, logoButton,
@@ -140,6 +140,20 @@ const core = createRadioCore({
 }, inspector ? { inspect: inspector.inspect } : {});
 connectMediaSessionCore(core);
 focusInitialPlaybackControl();
+
+// --- Tone invariant enforcer ---
+// The machine can only COMMAND the tone elements; a late async callback can
+// disobey (a play() settling after stop() once resurrected a tone under the
+// live radio — unstoppable, since the bookkeeping already said "stopped").
+// Enforce the invariant at the element boundary instead of per code path:
+// in states where no feedback tone may sound, anything that becomes audible
+// is silenced the moment the browser reports it. In the tone states this
+// does nothing — there the tone-swap/carry behavior is legitimate.
+for (const toneElement of [loadingNoise, errorNoise]) {
+  toneElement.addEventListener('playing', () => {
+    if (!isFeedbackAudible(core.getState())) toneElement.pause();
+  });
+}
 
 // --- Event listeners ---
 

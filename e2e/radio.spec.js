@@ -1070,4 +1070,30 @@ test.describe('Only the radio — no tone may survive under the stream', () => {
     // UNDER the live radio — unstoppable. It must stay dead.
     await expectOnlyStreamAudible(page);
   });
+
+  test('ANY tone resurrected while the radio plays is silenced on the spot', async ({ page }) => {
+    // The invariant enforcer, tested from the element boundary: no matter
+    // WHICH code path resurrects a tone (guarded, unguarded, or one nobody
+    // found yet), the moment it becomes audible in a no-tone state it must
+    // be killed. This is the by-construction net for Adrian's device repro:
+    // radio + unidentifiable background noise.
+    const c = ui(page);
+    const net = await routeStreams(page);
+
+    await page.goto('/');
+    await waitForSoundBlobs(page);
+    await c.playButton.click();
+    await expect(c.pauseButton).toBeVisible({ timeout: 8000 });
+
+    // Simulate a rogue late callback: something restarts the loading tone
+    // out of nowhere while the machine sits in 'playing'.
+    await page.evaluate(() => {
+      const el = document.getElementById('loadingNoise');
+      el.src = './sounds/loading-low.mp3';
+      el.play().catch(() => {});
+    });
+
+    // It must be silenced the moment it becomes audible — and stay silent.
+    await expectOnlyStreamAudible(page);
+  });
 });
