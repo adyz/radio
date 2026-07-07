@@ -62,6 +62,7 @@ export interface RadioDeps {
   showButton(which: PlaybackButton): void;
   setLoadingMsg(visible: boolean): void;
   setErrorMsg(visible: boolean): void;
+  setVisualizer(mode: VizMode): void;
   updateMediaSession(state: RadioState): void;
   saveLastIndex(index: number): void;
   setInterval(fn: () => void, ms: number): TimerId;
@@ -115,6 +116,14 @@ export const isFeedbackAudible = (s: RadioState): boolean =>
  *  'playing' whenever ANYTHING is audible (stream or feedback sound). */
 export const playbackStateFor = (s: RadioState): 'playing' | 'paused' | 'none' =>
   s === 'playing' || isFeedbackAudible(s) ? 'playing' : s === 'paused' ? 'paused' : 'none';
+
+export type VizMode = 'playing' | 'loading' | 'error' | 'off';
+
+/** Which sound the visualizer should move to. Every audible state maps to a
+ *  moving mode ('playing' = stream, otherwise the feedback tone); the bars
+ *  are 'off' exactly when the app is silent (idle/paused). */
+export const vizModeFor = (s: RadioState): VizMode =>
+  s === 'playing' ? 'playing' : isLoadingLike(s) ? 'loading' : isErrorLike(s) ? 'error' : 'off';
 
 const STATE_FX: Record<RadioState, StateFx> = {
   idle:       { button: 'play',  loading: 'stop',  error: 'stop',  loadingMsg: false, errorMsg: false },
@@ -287,6 +296,7 @@ export function createRadioMachine(deps: RadioDeps) {
         if (fx.error === 'stop') deps.errorSound.stop();
         deps.setLoadingMsg(fx.loadingMsg);
         deps.setErrorMsg(fx.errorMsg);
+        deps.setVisualizer(vizModeFor(params.state));
         deps.updateMediaSession(params.state);
       },
 

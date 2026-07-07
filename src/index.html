@@ -85,6 +85,12 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
     <!-- Gradient overlay -->
     <div class="absolute top-0 left-0 w-[104%] h-[100%] -m-[2%] bg-gradient-to-b from-Bg to-transparent"></div>
 
+    <!-- Sound visualizer: mirrors whatever is audible right now (radio
+         stream, loading tone or error tone) — still while the app is silent.
+         The state machine drives data-viz; visualizer.ts fills in the bars
+         and moves them on the real audio signal (CSS animation as fallback). -->
+    <div id="visualizer" data-viz="off" role="img" aria-label="Vizualizator sunet"
+      class="relative z-10 mb-2 flex h-8 w-full items-end justify-center gap-[2px] px-6"></div>
 
     <div>
 
@@ -214,7 +220,9 @@ c1 89 -2 107 -26 157 -33 70 -106 146 -173 178 -56 27 -193 40 -243 22 l-29
     <option value="https://urbanfm.ro:8777/live">Urban FM</option>
     <option value="https://live.rockfm.ro/rockfm.aacp">Rock FM</option>
     <option value="https://live.guerrillaradio.ro:8443/guerrilla.aac">Radio Guerrilla</option>
-    <option value="https://asculta.nationalfm.ro:9102/nfm2">National FM</option>
+    <!-- data-no-cors: serverul nu trimite Access-Control-Allow-Origin, deci
+         se încarcă opac (fără crossorigin) — altfel nu ar porni deloc. -->
+    <option value="https://asculta.nationalfm.ro:9102/nfm2" data-no-cors>National FM</option>
     <option value="https://edge126.rcs-rds.ro/profm/dancefm.mp3?1741969012508">Dance FM</option>
     <option value="https://live.radiovibefm.eu/8052/stream">Vibe FM</option>
     <option value="https://stream4.srr.ro:8443/romania-cultural">Radio România Cultural</option>
