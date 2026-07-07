@@ -1,5 +1,5 @@
 /**
- * Sound visualizer — five bars that move on the ACTUAL audio signal.
+ * Sound visualizer — a row of bars that move on the ACTUAL audio signal.
  *
  * The signal is read through element.captureStream() + AnalyserNode. Unlike
  * createMediaElementSource (the Web Audio approach reverted in 69a58f2),
@@ -29,11 +29,23 @@ const SILENT_FRAMES_TO_FALLBACK = 45;
 // While silent, periodically re-capture: a src swap ends the captured track
 const RECONNECT_EVERY_FRAMES = 60;
 
-// One frequency band per bar, bass → highs (bin ranges for fftSize 512
-// at 44.1/48kHz ≈ 86–94Hz per bin), roughly log-spaced like an equalizer.
-const BANDS: ReadonlyArray<readonly [number, number]> = [
-  [0, 2], [3, 7], [8, 20], [21, 55], [56, 140],
-];
+const BAR_COUNT = 48;
+
+// One frequency band per bar, bass → highs, log-spaced like an equalizer.
+// fftSize 512 → 256 bins ≈ 86–94Hz each; radio content dies out above
+// ~16kHz, so the bars spread over bins [0, 170] and every band gets at
+// least one bin.
+const MAX_BIN = 170;
+const BANDS: ReadonlyArray<readonly [number, number]> = (() => {
+  const bands: Array<readonly [number, number]> = [];
+  let lo = 0;
+  for (let i = 0; i < BAR_COUNT; i++) {
+    const hi = Math.max(lo, Math.round(MAX_BIN ** ((i + 1) / BAR_COUNT)) - 1);
+    bands.push([lo, hi]);
+    lo = hi + 1;
+  }
+  return bands;
+})();
 // Radio streams are loudness-compressed: absolute levels sit near the top and
 // barely move. Each band is therefore normalized against its own recent peak
 // (a slowly decaying AGC), so the bars ride the beat, not the loudness war.
@@ -44,7 +56,15 @@ const PEAK_FLOOR = 0.02;
 const bandPeaks = BANDS.map(() => PEAK_FLOOR);
 
 const elements: HTMLMediaElement[] = [player, loadingNoise, errorNoise];
-const bars = [...visualizer.querySelectorAll<HTMLElement>('.viz-bar')];
+
+// The bars are generated, not hand-written markup — their count must match
+// BANDS, and 48 spans in index.html would drift.
+const bars: HTMLElement[] = Array.from({ length: BAR_COUNT }, () => {
+  const bar = document.createElement('span');
+  bar.className = 'viz-bar';
+  return bar;
+});
+visualizer.replaceChildren(...bars);
 
 let ctx: AudioContext | null = null;
 let analyser: AnalyserNode | null = null;
