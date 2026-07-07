@@ -8,6 +8,7 @@ import {
   radioSelect, player, loadingNoise, errorNoise, loadingMsg, errorMsg,
   prevButton, playButton, pauseButton, stopButton, nextButton, logoButton,
 } from './dom';
+import { setVisualizerMode, warmUpVisualizer } from './visualizer';
 import { LABELS } from './labels';
 import { precacheStatusImages } from './cloudinary';
 import { getStoredStationIndex, saveLastIndex } from './storage';
@@ -67,6 +68,7 @@ function warmUpFeedbackSounds() {
   preloadAudioBlobs();
   loadingNoiseInstance.warmUp();
   errorNoiseInstance.warmUp();
+  warmUpVisualizer();
 }
 
 // --- Playback control buttons ---
@@ -110,7 +112,14 @@ const core = createRadioCore({
   setSelectedIndex: (i) => { radioSelect.selectedIndex = i; },
   playerPlay:       () => player.play(),
   playerPause:      () => player.pause(),
-  playerSetSrc:     (url) => { player.src = url; },
+  playerSetSrc:     (url) => {
+    // CORS-mode loads keep the visualizer's captureStream un-muted; stations
+    // that send no CORS headers (data-no-cors) load the classic opaque way —
+    // they still play, their bars just use the CSS fallback animation.
+    const station = Array.from(radioSelect.options).find(o => o.value === url);
+    player.crossOrigin = station?.dataset.noCors !== undefined ? null : 'anonymous';
+    player.src = url;
+  },
   playerLoad:       () => player.load(),
   playerCurrentTime: () => player.currentTime,
   loadingSound:     loadingNoiseInstance,
@@ -118,6 +127,7 @@ const core = createRadioCore({
   showButton,
   setLoadingMsg:    (v) => loadingMsg.classList.toggle('invisible', !v),
   setErrorMsg:      (v) => errorMsg.classList.toggle('invisible', !v),
+  setVisualizer:    setVisualizerMode,
   updateMediaSession: (s) => {
     updateMediaSession(s);
     maybeReloadForPendingServiceWorkerUpdate(s);

@@ -24,12 +24,13 @@ type ActorOptions = NonNullable<Parameters<typeof createActor>[1]>;
 
 // Shared domain types & timing constants live with the machine; re-exported
 // here so the rest of the app keeps a single import surface.
-export type { RadioState, FeedbackSound, RadioDeps } from './radioMachine';
+export type { RadioState, FeedbackSound, RadioDeps, VizMode } from './radioMachine';
 export {
   isLoadingLike,
   isErrorLike,
   isFeedbackAudible,
   playbackStateFor,
+  vizModeFor,
 } from './radioMachine';
 export {
   MAX_RETRIES,

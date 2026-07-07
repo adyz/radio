@@ -17,6 +17,7 @@ export const loadingNoise = el<HTMLAudioElement>('loadingNoise');
 export const errorNoise = el<HTMLAudioElement>('errorNoise');
 export const loadingMsg = el<HTMLElement>('loadingMsg');
 export const errorMsg = el<HTMLElement>('errorMsg');
+export const visualizer = el<HTMLElement>('visualizer');
 
 export const prevButton = el<HTMLButtonElement>('prevButton');
 export const playButton = el<HTMLButtonElement>('playButton');

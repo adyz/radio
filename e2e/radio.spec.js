@@ -3,6 +3,9 @@ import { test, expect } from '@playwright/test';
 const STREAM_URL_RE = /live\.kissfm|europafm|digifm|magicfm|virginradio|srr\.ro|profm|rockfm|guerrillaradio|nationalfm|dancefm|radiovibefm|radioprob|vanillaradio|radiofrance|\/accs3\/fip\/test-tone-\d+\.ts/;
 const SOUND_URL_RE = /\/sounds\/(?:loading-low|error-low)\.mp3(?:\?.*)?$/;
 const SOUND_CACHE_NAME = 'radio-sounds-v2';
+// The player loads streams in CORS mode (crossorigin, for the visualizer),
+// so mocked stream responses must carry the CORS header too.
+const CORS_HEADERS = { 'Access-Control-Allow-Origin': '*' };
 const HLS_TEST_SEGMENT = Buffer.from(
   'R0AREABC8CUAAcEAAP8B/wAB/IAUSBIBBkZGbXBlZwlTZXJ2aWNlMDF3fEPK//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////9HQAAQAACwDQABwQAAAAHwACqxBLL//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////0dQABAAArASAAHBAADhAPAAD+EA8AC2m8DZ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////R0EAMAdQAAB7DH4AAAABwADpgIAFIQAH2GH/8VCAA9/83gIATGF2YzYyLjI4LjEwMgBCIAjBGDj/8VCAAb/8IRAEYIwc//FQgAG//CEQBGCMHP/xUIABv/whEARgjBz/8VCAAb/8IRAEYIwc//FQgAG//CEQBGCMHP/xUIABv/whEARgjBz/8VCAAb/8IRAEYIwc//FQgAG//CEQBGCMHP/xUIABv/whEARgjBz/8VCAAb/8IRAEYIwc//FHAQAxeAD//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////1CAAb/8IRAEYIwc//FQgAG//CEQBGCMHP/xUIABv/whEARgjBz/8VCAAb/8IRAEYIwc//FQgAG//CEQBGCMHEdAABEAALANAAHBAAAAAfAAKrEEsv//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////R1AAEQACsBIAAcEAAOEA8AAP4QDwALabwNn///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////9HQQAyB1AAALxa/gAAAAHAANiAgAUhAAndm//xUIABv/whEARgjBz/8VCAAb/8IRAEYIwc//FQgAG//CEQBGCMHP/xUIABv/whEARgjBz/8VCAAb/8IRAEYIwc//FQgAG//CEQBGCMHP/xUIABv/whEARgjBz/8VCAAb/8IRAEYIwc//FQgAG//CEQBGCMHP/xUIABv/whEARgjBz/8VCAAb0cBADOJAP/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////8IRAEYIwc//FQgAG//CEQBGCMHP/xUIABv/whEARgjBz/8VCAAb/8IRAEYIwcR0AREQBC8CUAAcEAAP8B/wAB/IAUSBIBBkZGbXBlZwlTZXJ2aWNlMDF3fEPK//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////9HQAASAACwDQABwQAAAAHwACqxBLL//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////0dQABIAArASAAHBAADhAPAAD+EA8AC2m8DZ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////R0EANAdQAAD9qX4AAAABwADYgIAFIQAL4tX/8VCAAb/8IRAEYIwc//FQgAG//CEQBGCMHP/xUIABv/whEARgjBz/8VCAAb/8IRAEYIwc//FQgAG//CEQBGCMHP/xUIABv/whEARgjBz/8VCAAb/8IRAEYIwc//FQgAG//CEQBGCMHP/xUIABv/whEARgjBz/8VCAAb/8IRAEYIwc//FQgAG//CEQBGCMHP/xUIABv/whEARgjBz/8VCAAb9HAQA1iQD//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////CEQBGCMHP/xUIABv/whEARgjBz/8VCAAb/8IRAEYIwc//FQgAG//CEQBGCMHEdAABMAALANAAHBAAAAAfAAKrEEsv//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////R1AAEwACsBIAAcEAAOEA8AAP4QDwALabwNn///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////9HQQA2J1AAAT73fgD//////////////////////////////////////////wAAAcAAioCABSEADegN//FQgAG//CEQBGCMHP/xUIABv/whEARgjBz/8VCAAb/8IRAEYIwc//FQgAG//CEQBGCMHP/xUIABv/whEARgjBz/8VCAAb/8IRAEYIwc//FQgAG//CEQBGCMHP/xUIABv/whEARgjBz/8VCAAb/8IRAEYIwc//FQgAG//CEQBGCMHA==',
   'base64',
@@ -16,6 +19,7 @@ async function mockStreams(page) {
       await route.fulfill({
         status: 200,
         contentType: 'application/vnd.apple.mpegurl',
+        headers: CORS_HEADERS,
         body: [
           '#EXTM3U',
           '#EXT-X-VERSION:3',
@@ -37,6 +41,7 @@ async function mockStreams(page) {
       await route.fulfill({
         status: 200,
         contentType: 'video/mp2t',
+        headers: CORS_HEADERS,
         body: HLS_TEST_SEGMENT,
       });
       return;
@@ -45,6 +50,7 @@ async function mockStreams(page) {
     await route.fulfill({
       status: 200,
       contentType: 'audio/mpeg',
+      headers: CORS_HEADERS,
       path: 'src/public/sounds/test-tone.mp3',
     });
   });
@@ -65,6 +71,7 @@ async function mockStreamsDelayed(page, delayMs) {
     await route.fulfill({
       status: 200,
       contentType: 'audio/mpeg',
+      headers: CORS_HEADERS,
       path: 'src/public/sounds/test-tone.mp3',
     });
   });
@@ -96,7 +103,29 @@ function ui(page) {
     stationOptions: page.getByRole('listbox', { name: 'Posturi de radio' }).getByRole('option'),
     loadingMsg:     page.getByText(/Se încarcă/),
     errorMsg:       page.getByText(/Eroare la încărcarea/),
+    visualizer:     page.getByRole('img', { name: 'Vizualizator sunet' }),
   };
+}
+
+// --- Visualizer motion ---
+// A headless test can't watch an animation, but it can do what a user does:
+// look twice. Two screenshots of the visualizer that differ = the bars move.
+async function expectVisualizerMoving(viz) {
+  const before = await viz.screenshot();
+  await expect
+    .poll(async () => (await viz.screenshot()).equals(before), {
+      message: 'visualizer bars should be moving',
+      timeout: 5000,
+    })
+    .toBe(false);
+}
+
+async function expectVisualizerStill(page, viz) {
+  await page.waitForTimeout(600); // let the mode-change transition settle
+  const before = await viz.screenshot();
+  await page.waitForTimeout(400);
+  const after = await viz.screenshot();
+  expect(after.equals(before), 'visualizer bars should be still').toBe(true);
 }
 
 // Synchronization only (not an assertion): wait until the app finished its
@@ -295,6 +324,7 @@ test.describe('Radio Player E2E', () => {
         await route.fulfill({
           status: 200,
           contentType: 'application/vnd.apple.mpegurl',
+        headers: CORS_HEADERS,
           body: [
             '#EXTM3U',
             '#EXT-X-VERSION:3',
@@ -312,10 +342,10 @@ test.describe('Radio Player E2E', () => {
         return;
       }
       if (url.includes('/accs3/fip/test-tone-')) {
-        await route.fulfill({ status: 200, contentType: 'video/mp2t', body: HLS_TEST_SEGMENT });
+        await route.fulfill({ status: 200, contentType: 'video/mp2t', headers: CORS_HEADERS, body: HLS_TEST_SEGMENT });
         return;
       }
-      await route.fulfill({ status: 200, contentType: 'audio/mpeg', path: 'src/public/sounds/test-tone.mp3' });
+      await route.fulfill({ status: 200, contentType: 'audio/mpeg', headers: CORS_HEADERS, path: 'src/public/sounds/test-tone.mp3' });
     });
 
     await page.goto('/');
@@ -556,6 +586,50 @@ test.describe('Radio Player E2E', () => {
     await expect(c.loadingMsg).toContainText('Kiss FM');
   });
 
+  // --- Sound visualizer ---
+  // The visualizer mirrors the always-audible promise visually: whenever a
+  // sound plays (stream, loading tone, error tone) the bars move; in silence
+  // (idle/paused) they stand still.
+
+  test('visualizer is still while idle and moves while playing', async ({ page }) => {
+    const c = ui(page);
+    await mockStreams(page);
+    await page.goto('/');
+
+    await expect(c.visualizer).toBeVisible();
+    await expectVisualizerStill(page, c.visualizer);
+
+    await c.playButton.click();
+    await expect(c.pauseButton).toBeVisible({ timeout: 8000 });
+    await expectVisualizerMoving(c.visualizer);
+
+    // Pausing goes back to silence — the bars stop
+    await c.pauseButton.click();
+    await expect(c.playButton).toBeVisible();
+    await expectVisualizerStill(page, c.visualizer);
+  });
+
+  test('visualizer moves while the loading sound plays', async ({ page }) => {
+    const c = ui(page);
+    await mockStreamsHang(page);
+    await page.goto('/');
+
+    await c.playButton.click();
+    await expect(c.loadingMsg).toBeVisible({ timeout: 3000 });
+    await expectVisualizerMoving(c.visualizer);
+  });
+
+  test('visualizer moves while the error sound plays', async ({ page }) => {
+    const c = ui(page);
+    await page.goto('/');
+    await waitForSoundBlobs(page);
+    await page.context().setOffline(true);
+
+    await c.nextButton.click();
+    await expect(c.errorMsg).toBeVisible({ timeout: 3000 });
+    await expectVisualizerMoving(c.visualizer);
+  });
+
   // --- Accessibility ---
 
   test('all control buttons have aria-labels', async ({ page }) => {
@@ -723,6 +797,7 @@ test.describe('Offline — cached resources', () => {
         await route.fulfill({
           status: 200,
           contentType: 'audio/mpeg',
+          headers: CORS_HEADERS,
           path: 'src/public/sounds/test-tone.mp3',
         });
       },
@@ -845,7 +920,7 @@ test.describe('Offline mid-playback — always audible', () => {
         await route.abort('internetdisconnected');
         return;
       }
-      await route.fulfill({ status: 200, contentType: 'audio/mpeg', path: 'src/public/sounds/test-tone.mp3' });
+      await route.fulfill({ status: 200, contentType: 'audio/mpeg', headers: CORS_HEADERS, path: 'src/public/sounds/test-tone.mp3' });
     });
 
     await page.goto('/');

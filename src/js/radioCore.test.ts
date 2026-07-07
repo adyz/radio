@@ -6,6 +6,7 @@ import {
   isErrorLike,
   isFeedbackAudible,
   playbackStateFor,
+  vizModeFor,
   LOADING_TIMEOUT_MS,
   RETRY_DELAY_MS,
   RECOVERY_DELAY_MS,
@@ -29,6 +30,7 @@ function makeDeps(overrides: Partial<RadioDeps> = {}) {
     errorSound: [] as string[],
     loadingMsg: [] as boolean[],
     errorMsg: [] as boolean[],
+    visualizer: [] as string[],
     mediaSession: [] as string[],
     playerPlay: [] as string[],
     playerPause: [] as string[],
@@ -74,6 +76,7 @@ function makeDeps(overrides: Partial<RadioDeps> = {}) {
     showButton: (which: string) => calls.showButton.push(which),
     setLoadingMsg: (v: boolean) => calls.loadingMsg.push(v),
     setErrorMsg: (v: boolean) => calls.errorMsg.push(v),
+    setVisualizer: (m: string) => calls.visualizer.push(m),
     updateMediaSession: (s: string) => calls.mediaSession.push(s),
     saveLastIndex: (i: number) => calls.savedIndex.push(i),
     setTimeout: vi.fn((fn: () => void, ms: number) => {
@@ -169,6 +172,7 @@ describe('side-effects per state', () => {
     expect(calls.showButton.at(-1)).toBe('play');
     expect(calls.loadingMsg.at(-1)).toBe(false);
     expect(calls.errorMsg.at(-1)).toBe(false);
+    expect(calls.visualizer.at(-1)).toBe('off');
   });
 
   it('loading: stop button, loading sound, loading message', () => {
@@ -181,6 +185,7 @@ describe('side-effects per state', () => {
     expect(calls.loadingSound).toContain('play');
     expect(calls.loadingMsg.at(-1)).toBe(true);
     expect(calls.errorMsg.at(-1)).toBe(false);
+    expect(calls.visualizer.at(-1)).toBe('loading');
   });
 
   it('playing: pause button, sounds stopped, no messages', async () => {
@@ -196,6 +201,7 @@ describe('side-effects per state', () => {
     expect(calls.errorSound.at(-1)).toBe('stop');
     expect(calls.loadingMsg.at(-1)).toBe(false);
     expect(calls.errorMsg.at(-1)).toBe(false);
+    expect(calls.visualizer.at(-1)).toBe('playing');
   });
 
   it('paused: play button, sounds stopped', async () => {
@@ -209,6 +215,7 @@ describe('side-effects per state', () => {
     expect(core.getState()).toBe('paused');
     expect(calls.showButton.at(-1)).toBe('play');
     expect(calls.loadingMsg.at(-1)).toBe(false);
+    expect(calls.visualizer.at(-1)).toBe('off');
   });
 
   it('retrying: stop button, loading sound keeps playing', async () => {
@@ -224,6 +231,7 @@ describe('side-effects per state', () => {
     // loading sound was NOT stopped — last loading action is 'play' from loading state
     expect(calls.loadingSound.at(-1)).toBe('play');
     expect(calls.errorMsg.at(-1)).toBe(false);
+    expect(calls.visualizer.at(-1)).toBe('loading');
   });
 
   it('error: stop button, error sound, error message', async () => {
@@ -242,6 +250,7 @@ describe('side-effects per state', () => {
     expect(calls.errorSound.at(-1)).toBe('play');
     expect(calls.errorMsg.at(-1)).toBe(true);
     expect(calls.loadingMsg.at(-1)).toBe(false);
+    expect(calls.visualizer.at(-1)).toBe('error');
   });
 
   it('stopRadio → idle: play button, all sounds stopped', () => {
@@ -257,6 +266,7 @@ describe('side-effects per state', () => {
     expect(calls.errorSound.at(-1)).toBe('stop');
     expect(calls.loadingMsg.at(-1)).toBe(false);
     expect(calls.errorMsg.at(-1)).toBe(false);
+    expect(calls.visualizer.at(-1)).toBe('off');
   });
 });
 
@@ -1478,20 +1488,28 @@ describe('state classification predicates', () => {
   it('classifies every state exactly as STATE_FX presents it', () => {
     const table: Record<RadioState, {
       loadingLike: boolean; errorLike: boolean; playback: 'playing' | 'paused' | 'none';
+      viz: 'playing' | 'loading' | 'error' | 'off';
     }> = {
-      idle:       { loadingLike: false, errorLike: false, playback: 'none' },
-      loading:    { loadingLike: true,  errorLike: false, playback: 'playing' },
-      playing:    { loadingLike: false, errorLike: false, playback: 'playing' },
-      paused:     { loadingLike: false, errorLike: false, playback: 'paused' },
-      retrying:   { loadingLike: true,  errorLike: false, playback: 'playing' },
-      error:      { loadingLike: false, errorLike: true,  playback: 'playing' },
-      recovering: { loadingLike: false, errorLike: true,  playback: 'playing' },
+      idle:       { loadingLike: false, errorLike: false, playback: 'none',    viz: 'off' },
+      loading:    { loadingLike: true,  errorLike: false, playback: 'playing', viz: 'loading' },
+      playing:    { loadingLike: false, errorLike: false, playback: 'playing', viz: 'playing' },
+      paused:     { loadingLike: false, errorLike: false, playback: 'paused',  viz: 'off' },
+      retrying:   { loadingLike: true,  errorLike: false, playback: 'playing', viz: 'loading' },
+      error:      { loadingLike: false, errorLike: true,  playback: 'playing', viz: 'error' },
+      recovering: { loadingLike: false, errorLike: true,  playback: 'playing', viz: 'error' },
     };
     for (const [state, expected] of Object.entries(table) as Array<[RadioState, typeof table[RadioState]]>) {
       expect(isLoadingLike(state), `isLoadingLike(${state})`).toBe(expected.loadingLike);
       expect(isErrorLike(state), `isErrorLike(${state})`).toBe(expected.errorLike);
       expect(isFeedbackAudible(state), `isFeedbackAudible(${state})`).toBe(expected.loadingLike || expected.errorLike);
       expect(playbackStateFor(state), `playbackStateFor(${state})`).toBe(expected.playback);
+      expect(vizModeFor(state), `vizModeFor(${state})`).toBe(expected.viz);
+    }
+    // The visualizer invariant mirrors "always audible": bars move exactly
+    // when something plays, never in silence.
+    for (const state of Object.keys(table) as RadioState[]) {
+      expect(vizModeFor(state) !== 'off', `viz moves in ${state}`)
+        .toBe(playbackStateFor(state) === 'playing');
     }
   });
 });
