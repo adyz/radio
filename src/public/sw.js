@@ -2,7 +2,7 @@
 // Bump APP_CACHE version when static files change to force re-cache.
 // Bump SOUND_CACHE version when sound files change.
 
-const APP_CACHE_NAME = 'radio-app-v3';
+const APP_CACHE_NAME = 'radio-app-v4'; // v4: the APK no longer lands in the cache
 const CACHE_NAME = 'radio-images-v3';
 const SOUND_CACHE_NAME = 'radio-sounds-v2';
 const MAX_CACHED_IMAGES = 30;
@@ -98,19 +98,32 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // App shell — network-first, fallback to cache for offline
+  // App shell — network-first, fallback to cache for offline.
+  // The APK download is streamed straight through: 2.4MB has no business
+  // sitting in the app cache, and caching it also delayed the download.
   if (
     event.request.method === 'GET' &&
     reqUrl.origin === self.location.origin &&
-    !reqUrl.pathname.startsWith('/sounds/')
+    !reqUrl.pathname.startsWith('/sounds/') &&
+    !reqUrl.pathname.startsWith('/downloads/')
   ) {
     event.respondWith(
       (async () => {
         try {
           const response = await fetch(event.request);
           if (response.ok) {
-            const cache = await caches.open(APP_CACHE_NAME);
-            await cache.put(event.request, response.clone());
+            // Cache write happens off the response path (same pattern as the
+            // cloudinary branch) — the page gets its first bytes without
+            // waiting for a full body download + disk write.
+            const clone = response.clone();
+            event.waitUntil(
+              (async () => {
+                try {
+                  const cache = await caches.open(APP_CACHE_NAME);
+                  await cache.put(event.request, clone);
+                } catch (_) { /* swallow cache errors */ }
+              })()
+            );
           }
           return response;
         } catch (_) {

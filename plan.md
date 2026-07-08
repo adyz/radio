@@ -600,7 +600,7 @@ offline.
 
 Verificare: typecheck, unit (cu teste noi), e2e neatins.
 
-## Faza R5: recheck offline fara reenter + memoizare updateMediaSession
+## Faza R5: recheck offline fara reenter + memoizare updateMediaSession [in PR #50]
 
 Zona sensibila iOS — ultima faza de logica, cu smoke pe device.
 
@@ -622,7 +622,22 @@ tick-uri), e2e neatins, SMOKE PE DEVICE: telefon offline in error 5+ min cu
 ecranul blocat — widget-ul nu mai palpaie, bateria nu se scurge; revenire
 online → recovering → playing.
 
-## Faza R6: startup mai usor (cloudinary precache)
+## Faza R6: startup mai usor (cloudinary precache) [in PR #50]
+
+Nota de implementare (2026-07-04): la cererea lui Adrian, R5 + fix-ul
+zombie (carrySound cu garda de generatie) + R6 merg intr-UN SINGUR PR
+(#50). Abateri deliberate fata de planul initial al R6:
+- Lista de precache NU se reduce la labels + statia curenta: e2e-ul (si
+  produsul) garanteaza ca posterele TUTUROR posturilor functioneaza
+  offline — reducerea ar fi schimbat comportamentul. Ramane lista
+  completa, doar amanata la requestIdleCallback (fallback setTimeout 3s
+  pe Safari).
+- Pagina isi pastreaza cache.put-ul propriu: pe primul load SW-ul preia
+  controlul abia dupa activate/claim, iar fara put-ul paginii imaginile
+  fetch-uite inainte de claim ar ramane necache-uite.
+- sw.js: put-ul de app-shell iese de pe calea raspunsului (waitUntil, ca
+  la cloudinary), /downloads/ (APK 2.4MB) nu se mai cache-uieste, bump
+  APP_CACHE v4 ca sa evacueze APK-ul din instalarile existente.
 
 - cloudinary.ts/main.ts: amana precacheStatusImages la `requestIdleCallback`
   (fallback setTimeout) si redu la labels + statia curenta (azi: 22 de

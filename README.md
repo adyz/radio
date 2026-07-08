@@ -128,9 +128,9 @@ Măsurat (iulie 2026, Chromium 145/149): un `<audio>` cu `.m3u8` atașat căruia
 
 ## Teste
 
-### Unit tests — `radioCore.test.ts` (63 de teste, Vitest)
+### Unit tests — `radioCore.test.ts` + `soundEffects.test.ts` (Vitest)
 
-Testează mașina + adaptorul **fără browser**. Toate dependențele (player, sunete, DOM) sunt mock-uite manual prin `makeDeps()`, iar `after`-delay-urile mașinii rulează pe un `SimulatedClock` injectat (avansat manual cu `clock.increment(ms)`).
+`radioCore.test.ts` testează mașina + adaptorul **fără browser**. Toate dependențele (player, sunete, DOM) sunt mock-uite manual prin `makeDeps()`, iar `after`-delay-urile mașinii rulează pe un `SimulatedClock` injectat (avansat manual cu `clock.increment(ms)`). `soundEffects.test.ts` acoperă regula tone-swap a sunetelor de feedback (un singur element viu, swap de src între tonuri) pe un element `<audio>` fals.
 
 ```bash
 npm test          # vitest run

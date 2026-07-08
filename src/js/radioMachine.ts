@@ -134,9 +134,6 @@ export interface RadioContext {
   recoveryCount: number;
   lastPauseTime: number | null;
   userPauseIntentAt: number | null;
-  /** True while the recovery loop is just re-checking a known-offline network
-   *  (fixed cadence, no backoff escalation, no recoveryCount increment). */
-  offlineRecheck: boolean;
 }
 
 export type RadioEvent =
@@ -166,13 +163,6 @@ export function createRadioMachine(deps: RadioDeps) {
   const streamFailure = (...extra: Array<'stopPlayer' | 'clearPauseTime'>) => [
     { guard: 'canRetry' as const, target: 'retrying' as const, actions: [...extra, 'incrementRetryCount' as const] },
     { target: 'error' as const, actions: [...extra, 'beginErrorCycle' as const] },
-  ];
-
-  // Network is back → attempt recovery; still offline → re-check on a fixed
-  // cadence without escalating (nothing was attempted).
-  const tryRecover = [
-    { guard: 'isOnline' as const, target: 'recovering' as const, actions: 'clearOfflineRecheck' as const },
-    { target: 'error' as const, reenter: true, actions: 'markOfflineRecheck' as const },
   ];
 
   // Live streams drift — resuming after a long pause would replay stale
@@ -232,15 +222,15 @@ export function createRadioMachine(deps: RadioDeps) {
       LOADING_TIMEOUT: LOADING_TIMEOUT_MS,
       RETRY_DELAY: RETRY_DELAY_MS,
       // Exponential backoff (10s → 20s → … capped), forever — a radio should
-      // never give up. While clearly offline, re-check on a fixed cadence
-      // without escalating (nothing was attempted).
+      // never give up.
       RECOVERY_DELAY: ({ context }) =>
-        context.offlineRecheck
-          ? RECOVERY_DELAY_MS
-          : Math.min(
-              RECOVERY_DELAY_MS * 2 ** Math.min(context.recoveryCount - 1, 6),
-              RECOVERY_DELAY_MAX_MS,
-            ),
+        Math.min(
+          RECOVERY_DELAY_MS * 2 ** Math.min(context.recoveryCount - 1, 6),
+          RECOVERY_DELAY_MAX_MS,
+        ),
+      // While clearly offline, re-check on a fixed cadence without
+      // escalating (nothing was attempted).
+      OFFLINE_RECHECK: RECOVERY_DELAY_MS,
     },
 
     actors: {
@@ -301,11 +291,8 @@ export function createRadioMachine(deps: RadioDeps) {
       // Runs on the TRANSITION into error (not on entry) so the RECOVERY_DELAY
       // expression is guaranteed to see the incremented count.
       beginErrorCycle: assign(({ context }) => ({
-        offlineRecheck: false,
         recoveryCount: context.recoveryCount + 1,
       })),
-      markOfflineRecheck: assign({ offlineRecheck: true }),
-      clearOfflineRecheck: assign({ offlineRecheck: false }),
       markUserPauseIntent: assign(() => ({ userPauseIntentAt: deps.performanceNow() })),
       consumeUserPauseIntent: assign({ userPauseIntentAt: null }),
       markPauseTime: assign(() => ({ lastPauseTime: deps.performanceNow() })),
@@ -336,27 +323,28 @@ export function createRadioMachine(deps: RadioDeps) {
       recoveryCount: 0,
       lastPauseTime: null,
       userPauseIntentAt: null,
-      offlineRecheck: false,
     },
     initial: 'idle',
 
     on: {
       // Handled identically in every state (child states may override).
+      // consumeUserPauseIntent: PLAY/STOP abandon any pending pause, so a
+      // stale intent must not explain away the next unexpected offline pause.
       PLAY: [
         {
           guard: 'isOnline',
           target: '.loading',
-          actions: ['setStation', 'syncSelectedIndex', 'resetAttemptCounters', 'clearPauseTime'],
+          actions: ['setStation', 'syncSelectedIndex', 'resetAttemptCounters', 'clearPauseTime', 'consumeUserPauseIntent'],
         },
         {
           // No point trying if offline — go straight to error and recover later
           target: '.error',
-          actions: ['setStation', 'syncSelectedIndex', 'resetAttemptCounters', 'clearPauseTime', 'stopPlayer', 'beginErrorCycle'],
+          actions: ['setStation', 'syncSelectedIndex', 'resetAttemptCounters', 'clearPauseTime', 'consumeUserPauseIntent', 'stopPlayer', 'beginErrorCycle'],
         },
       ],
       STOP: {
         target: '.idle',
-        actions: ['resetRetryCount', 'resetRecoveryCount', 'clearPauseTime', 'stopPlayer'],
+        actions: ['resetRetryCount', 'resetRecoveryCount', 'clearPauseTime', 'consumeUserPauseIntent', 'stopPlayer'],
       },
       // A user-intent pause: mark it so the native 'pause' event it triggers
       // isn't mistaken for a dying stream. The feedback states override this
@@ -420,7 +408,10 @@ export function createRadioMachine(deps: RadioDeps) {
             {
               guard: 'unexpectedOfflinePause',
               target: 'retrying',
-              actions: ['consumeUserPauseIntent', 'clearPauseTime', 'incrementRetryCount'],
+              // stopPlayer: detach the dead stream like STALLED/PLAYER_ERROR
+              // do — otherwise the old src stays attached through RETRY_DELAY
+              // and a refilled buffer could sound under the loading tone.
+              actions: ['consumeUserPauseIntent', 'clearPauseTime', 'stopPlayer', 'incrementRetryCount'],
               // retryCount is always 0 while playing (reset on success), so
               // the retry branch is the only reachable one — kept simple.
             },
@@ -462,18 +453,55 @@ export function createRadioMachine(deps: RadioDeps) {
           ],
           RESUME: [...restartAfterLongPause, { target: '.resuming' }],
           TOGGLE: [...restartAfterLongPause, { target: '.resuming' }],
-          PLAYER_ERROR: streamFailure('clearPauseTime'),
+          // PLAYER_ERROR is deliberately NOT handled here: a deliberate pause
+          // stays silent even if the still-attached stream errors later. A
+          // resume on the broken src fails back into paused; a long-pause
+          // resume restarts the station from scratch anyway.
         },
       },
 
       error: {
+        // Entry fx and the sound supervisor run ONCE per error cycle — the
+        // wait-for-recovery loop lives in substates so an offline night does
+        // not rebuild MediaMetadata / re-register handlers / re-create the
+        // supervisor every 10 seconds (it used to, via reenter).
         entry: [{ type: 'applyFx', params: { state: 'error' } }],
         invoke: { src: 'soundSupervisor', input: { sound: 'error' } as const },
-        after: {
-          RECOVERY_DELAY: tryRecover,
+        initial: 'backoff',
+        states: {
+          // One escalating backoff wait after a failed attempt.
+          backoff: {
+            after: {
+              RECOVERY_DELAY: [
+                { guard: 'isOnline', target: '#radio.recovering' },
+                { target: 'offlineRecheck' },
+              ],
+            },
+            on: {
+              RETRY_FROM_ERROR: [
+                { guard: 'isOnline', target: '#radio.recovering' },
+                { target: 'offlineRecheck' },
+              ],
+            },
+          },
+          // Clearly offline: re-check on a fixed cadence. The reenter only
+          // re-arms this child's timer — the parent (fx, supervisor) stays.
+          offlineRecheck: {
+            after: {
+              OFFLINE_RECHECK: [
+                { guard: 'isOnline', target: '#radio.recovering' },
+                { target: 'offlineRecheck', reenter: true },
+              ],
+            },
+            on: {
+              RETRY_FROM_ERROR: [
+                { guard: 'isOnline', target: '#radio.recovering' },
+                { target: 'offlineRecheck', reenter: true },
+              ],
+            },
+          },
         },
         on: {
-          RETRY_FROM_ERROR: tryRecover,
           ...startFromSelector,
           PAUSE_REQUESTED: { actions: 'raiseStop' },
         },

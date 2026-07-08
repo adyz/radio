@@ -223,6 +223,12 @@ export function audioInstance(htmlElement: HTMLAudioElement): SoundInstance {
     // the gesture). Otherwise the classic warm-up: a split-second play/pause
     // so iOS blesses the element for later programmatic starts.
     warmUp() {
+      // My tone lives on the partner element (carry) — the gesture should
+      // steady THAT element, not start a second one under it.
+      if (partner?.isCarrying()) {
+        partner.reassert();
+        return;
+      }
       if (isPlaying) {
         reassertPlayback();
         return;
@@ -255,8 +261,14 @@ export function audioInstance(htmlElement: HTMLAudioElement): SoundInstance {
       carriedSrc = src;
       htmlElement.src = src;
       htmlElement.currentTime = 0;
-      htmlElement.play().catch(() => {
-        // Even the continuation was denied — restore our own sound rather
+      const gen = playGeneration;
+      htmlElement.play().catch((error) => {
+        // The swap failed — but if we were stopped or reclaimed meanwhile
+        // (generation moved on), or our own stop interrupted it (AbortError),
+        // stay silent: restarting here would resurrect a zombie tone UNDER
+        // the live stream (device-observed: loading tone + radio at once).
+        if (gen !== playGeneration || isAbortError(error)) return;
+        // Denied outright while still wanted — restore our own sound rather
         // than trade something audible for silence.
         carriedSrc = null;
         htmlElement.src = ownSrc();

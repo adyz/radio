@@ -3,7 +3,7 @@
  * through the feature modules. No business logic lives here, only wiring.
  */
 
-import { createRadioCore, isLoadingLike } from './radioCore';
+import { createRadioCore, isLoadingLike, isFeedbackAudible } from './radioCore';
 import {
   radioSelect, player, loadingNoise, errorNoise, loadingMsg, errorMsg,
   prevButton, playButton, pauseButton, stopButton, nextButton, logoButton,
@@ -28,11 +28,19 @@ declare global {
 
 document.addEventListener("touchstart", function () { }, true);
 
-// Pre-cache status images + station name images for offline use
-precacheStatusImages([
+// Pre-cache status images + station name images for offline use — deferred
+// to idle time so the ~22 image fetches don't compete with the stream
+// connection and the sound-blob preloads at startup (time-to-audio first).
+const runStatusImagePrecache = () => precacheStatusImages([
   ...Object.values(LABELS),
   ...Array.from(radioSelect.options).map(o => o.text),
 ]);
+if ('requestIdleCallback' in window) {
+  requestIdleCallback(runStatusImagePrecache, { timeout: 5000 });
+} else {
+  // Safari has no requestIdleCallback — a plain delay clears startup anyway.
+  setTimeout(runStatusImagePrecache, 3000);
+}
 
 // Restore last station before anything reads selectedIndex
 const restoredStationIndex = getStoredStationIndex(radioSelect.options.length);
@@ -132,6 +140,25 @@ const core = createRadioCore({
 }, inspector ? { inspect: inspector.inspect } : {});
 connectMediaSessionCore(core);
 focusInitialPlaybackControl();
+
+// --- Tone invariant enforcer ---
+// The machine can only COMMAND the tone elements; a late async callback can
+// disobey (a play() settling after stop() once resurrected a tone under the
+// live radio — unstoppable, since the bookkeeping already said "stopped").
+// Enforce the invariant at the element boundary instead of per code path:
+// in states where no feedback tone may sound, anything audible is silenced.
+// 'playing' catches fresh (re)starts the moment they become audible;
+// 'timeupdate' fires continuously during playback (~4x/s), so it also
+// catches a tone that never obeyed its stop and just kept going — no
+// resurrection path, known or unknown, survives more than ~250ms. In the
+// tone states this does nothing — swap/carry behavior is legitimate there.
+for (const toneElement of [loadingNoise, errorNoise]) {
+  const silenceIfForbidden = () => {
+    if (!isFeedbackAudible(core.getState())) toneElement.pause();
+  };
+  toneElement.addEventListener('playing', silenceIfForbidden);
+  toneElement.addEventListener('timeupdate', silenceIfForbidden);
+}
 
 // --- Event listeners ---
 
